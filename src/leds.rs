@@ -12,7 +12,6 @@ use embassy_rp::dma::{AnyChannel, Channel};
 
 /// Overall brightness of LEDs.
 const BRIGHTNESS: f32 = 0.3;
-
 const DEFAULTBRIGHTNESS: i32 = 32;
 
 /// Controls WS2812 LEDs, using RP2040's PIO.
