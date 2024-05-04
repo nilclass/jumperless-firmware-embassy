@@ -99,15 +99,6 @@ async fn main(spawner: Spawner) {
     let usb_future = usb.run();
 
     spawner.spawn(startup_leds()).unwrap();
-    // let led_task = async {
-    //     leds.startup_colors().await;
-    //     Timer::after_millis(2).await;
-    //     leds.set_rgb8(110, (32, 0, 0));
-    //     leds.flush().await;
-    //     loop {
-    //         Timer::after_secs(10).await;
-    //     }
-    // };
 
     let shell_future = async {
         loop {
@@ -119,17 +110,4 @@ async fn main(spawner: Spawner) {
         }
     };
     join(usb_future, shell_future).await;
-
-    // loop {
-    //     info!("Loop...");
-    //     Timer::after_secs(3).await;
-    //     leds.rainbow_bounce(Duration::from_millis(40)).await;
-    //     // ws2812.rainbow_bounce().await;
-    //     // info!("Bounce done, setting off");
-    //     // Timer::after_millis(1).await;
-    //     // ws2812.off().await;
-    //     // info!("Waiting...");
-    //     // Timer::after_secs(3).await;
-    //     // info!("Here we go again!");
-    // }
 }

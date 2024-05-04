@@ -6,6 +6,10 @@ Not ready for anything. Do not use.
 
 ## How to run
 
-```
-cargo run --release
-```
+1. Adjust the `runner = ...` line in `.cargo/config.toml`, if you don't have a debug probe
+2. Run (i.e. build & upload) the application:
+   ```
+   cargo run --release
+   ```
+
+Running with a debug probe is recommended, since this is currently the only way to get full debug logging.
