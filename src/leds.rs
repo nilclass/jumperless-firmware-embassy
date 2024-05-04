@@ -1,18 +1,136 @@
-use smart_leds::RGB8;
+use embassy_rp::dma::{AnyChannel, Channel};
 use embassy_rp::pio::{
     Common, Config, FifoJoin, Instance, PioPin, ShiftConfig, ShiftDirection, StateMachine,
 };
-use embassy_time::Timer;
 use embassy_rp::{clocks, into_ref, Peripheral, PeripheralRef};
-use fixed_macro::fixed;
+use embassy_time::{Duration, Timer};
 use fixed::types::U24F8;
+use fixed_macro::fixed;
 use micromath::F32Ext;
-use embassy_rp::dma::{AnyChannel, Channel};
 
-
-/// Overall brightness of LEDs.
-const BRIGHTNESS: f32 = 0.3;
 const DEFAULTBRIGHTNESS: i32 = 32;
+
+/// Manages and controls the LEDs
+///
+/// The LED colors are held in an in-memory buffer. The buffer can be manipulated
+/// by calling [`set_rgb8`], [`set_rgb`] or [`set_hsv`], and then written to the
+/// LEDs all at once by calling [`flush`].
+///
+pub struct Leds<'d, P: Instance, const S: usize, const N: usize> {
+    ws2812: Ws2812<'d, P, S, N>,
+    words: [u32; N],
+}
+
+impl<'d, P: Instance, const S: usize, const N: usize> Leds<'d, P, S, N> {
+    pub fn new(ws2812: Ws2812<'d, P, S, N>) -> Self {
+        Self {
+            ws2812,
+            words: [0; N],
+        }
+    }
+
+    /// Set LED at given index to color in RGB colorspace
+    ///
+    /// This version receives 8 bit color components, and is the most direct / fastest way to set a color.
+    pub fn set_rgb8(&mut self, i: usize, (r, g, b): (u8, u8, u8)) {
+        assert!(i < N);
+        self.words[i] = (g as u32) << 24 | (r as u32) << 16 | (b as u32) << 8;
+    }
+
+    /// Set LED at given index to color in RGB colorspace
+    ///
+    /// `r`, `g` and `b` should be in the range from `0.0` to `1.0`.
+    pub fn set_rgb(&mut self, i: usize, (r, g, b): (f32, f32, f32)) {
+        assert!(i < N);
+        self.set_rgb8(i, ((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
+    }
+
+    /// Set LED at given index to color in HSV colorspace
+    ///
+    /// `h`, `s` and `v` should be in the range from `0.0` to `1.0`.
+    ///
+    /// Converts to RGB internally. This is presumably the slowest way to set a color.
+    pub fn set_hsv(&mut self, i: usize, (h, s, v): (f32, f32, f32)) {
+        assert!(i < N);
+        let (r, g, b) = hsv_to_rgb((h, s, v));
+        self.set_rgb(i, (r, g, b));
+    }
+
+    /// Update LEDs with change made by the `set_*` methods.
+    pub async fn flush(&mut self) {
+        self.ws2812.write_raw(&self.words).await;
+    }
+
+    /// Turn off all LEDs (set all colors to 0 and flush)
+    pub async fn off(&mut self) {
+        self.words.fill(0);
+        self.flush().await;
+    }
+
+    /// Play startup animation
+    ///
+    /// Turns all LEDs off when done.
+    pub async fn startup_colors(&mut self) {
+        let mut offset = 1;
+        let mut fade;
+        let mut done = false;
+        for j in (4..162).step_by(2) {
+            if j < DEFAULTBRIGHTNESS / 3 {
+                fade = j * 3;
+            } else {
+                let mut fadeout = j - DEFAULTBRIGHTNESS;
+                if fadeout < 0 {
+                    fadeout = 0;
+                }
+                if fadeout > DEFAULTBRIGHTNESS {
+                    fadeout = DEFAULTBRIGHTNESS;
+                    done = true;
+                }
+                fade = DEFAULTBRIGHTNESS - fadeout;
+            }
+
+            for i in 0..N {
+                let led_index = (i + offset) % N;
+                let mut h = (i as f32 * j as f32 * 0.1) / 255.0;
+                let s = 0.99;
+                let v = if led_index == 110 {
+                    h = (189 + j) as f32 / 255.0;
+                    0.33
+                } else {
+                    fade as f32 / 255.0
+                };
+                self.set_hsv(led_index, (h, s, v));
+            }
+            self.flush().await;
+
+            offset += 1;
+
+            if done {
+                break;
+            } else {
+                Timer::after_millis(14).await;
+            }
+        }
+        Timer::after_millis(2).await;
+        self.off().await;
+    }
+
+    /// Play "rainbow bounce" animation
+    ///
+    /// Turns all LEDs off when done.
+    pub async fn rainbow_bounce(&mut self, wait: Duration) {
+        for j in (0..40).chain((0..40).rev()) {
+            for i in 0..N {
+                self.set_hsv(i, ((i as f32 / j as f32).sin(), 0.99, 0.1));
+            }
+            self.flush().await;
+            Timer::after(wait + Duration::from_millis(j / 20)).await;
+        }
+
+        Timer::after_millis(2).await;
+        self.off().await;
+    }
+}
 
 /// Controls WS2812 LEDs, using RP2040's PIO.
 ///
@@ -30,8 +148,6 @@ impl<'d, P: Instance, const S: usize, const N: usize> Ws2812<'d, P, S, N> {
         pin: impl PioPin,
     ) -> Self {
         into_ref!(dma);
-
-        // Setup sm0
 
         // prepare the PIO program
         let side_set = pio::SideSet::new(false, 1, false);
@@ -92,92 +208,10 @@ impl<'d, P: Instance, const S: usize, const N: usize> Ws2812<'d, P, S, N> {
         }
     }
 
-    pub async fn write(&mut self, colors: &[RGB8; N]) {
-        // Precompute the word bytes from the colors
-        let mut words = [0u32; N];
-        for i in 0..N {
-            let word = (u32::from(colors[i].g) << 24) | (u32::from(colors[i].r) << 16) | (u32::from(colors[i].b) << 8);
-            words[i] = word;
-        }
-
-        // DMA transfer
-        self.sm.tx().dma_push(self.dma.reborrow(), &words).await;
-
+    pub async fn write_raw(&mut self, words: &[u32; N]) {
+        self.sm.tx().dma_push(self.dma.reborrow(), words).await;
         Timer::after_micros(55).await;
     }
-
-    pub async fn rainbow_bounce(&mut self) {
-        let mut data = [RGB8::default(); N];
-        for j in (0..40).into_iter().chain((0..40).into_iter().rev()) {
-            for (i, color) in data.iter_mut().enumerate() {
-                *color = rainbow_bounce_color(i as f32, j as f32);
-            }
-            self.write(&data).await;
-            Timer::after_millis(40 * j / 20).await;
-        }
-    }
-
-    pub async fn off(&mut self) {
-        self.write(&[RGB8::new(0, 0, 0); N]).await;
-    }
-
-    pub async fn on(&mut self) {
-        self.write(&[RGB8::new(80, 80, 80); N]).await;
-    }
-
-    pub async fn startup_colors(&mut self) {
-        let mut offset = 1;
-        let mut fade;
-        let mut done = false;
-
-        let mut data = [RGB8::default(); N];
-        
-        for j in (4..162).step_by(2) {
-            if j < DEFAULTBRIGHTNESS / 3 {
-                fade = j * 3;
-            } else {
-                let mut fadeout = j - DEFAULTBRIGHTNESS;
-                if fadeout < 0 {
-                    fadeout = 0;
-                }
-                if fadeout > DEFAULTBRIGHTNESS {
-                    fadeout = DEFAULTBRIGHTNESS;
-                    done = true;
-                }
-                fade = DEFAULTBRIGHTNESS - fadeout;
-            }
-
-            for (i, color) in data.iter_mut().enumerate() {
-                let mut h = (i as f32 * j as f32 * 0.1) / 255.0;
-                let s = 0.99;
-                let v = if (i + offset) % N == 110 {
-                    h = (189 + j) as f32 / 255.0;
-                    0.33
-                } else {
-                    fade as f32 / 255.0
-                };
-                let (r, g, b) = hsv_to_rgb((h, s, v));
-                *color = RGB8::new((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
-            }
-            self.write(&data).await;
-
-            offset += 1;
-
-            if done {
-                break;
-            } else {
-                Timer::after_millis(14).await;
-            }
-        }
-        Timer::after_millis(2).await;
-        self.off().await;
-    }
-}
-
-fn rainbow_bounce_color(i: f32, j: f32) -> RGB8 {
-    let (h, s, v) = ((i / j).sin(), 0.99, 0.1);
-    let (r, g, b) = hsv_to_rgb((h, s, v));
-    RGB8::new((BRIGHTNESS * r * 255.0) as u8, (BRIGHTNESS * g * 255.0) as u8, (BRIGHTNESS * b * 255.0) as u8)
 }
 
 pub fn hsv_to_rgb(c: (f32, f32, f32)) -> (f32, f32, f32) {
@@ -186,11 +220,11 @@ pub fn hsv_to_rgb(c: (f32, f32, f32)) -> (f32, f32, f32) {
         ((c.0 + 2.0 / 3.0).fract() * 6.0 - 3.0).abs(),
         ((c.0 + 1.0 / 3.0).fract() * 6.0 - 3.0).abs(),
     );
-    return (
+    (
         c.2 * mix(1.0, (p.0 - 1.0).clamp(0.0, 1.0), c.1),
         c.2 * mix(1.0, (p.1 - 1.0).clamp(0.0, 1.0), c.1),
         c.2 * mix(1.0, (p.2 - 1.0).clamp(0.0, 1.0), c.1),
-    );
+    )
 }
 
 pub fn mix(a: f32, b: f32, t: f32) -> f32 {
