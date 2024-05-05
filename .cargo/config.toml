@@ -4,6 +4,9 @@ DEFMT_LOG = "debug"
 [build]
 target = "thumbv6m-none-eabi"        # Cortex-M0 and Cortex-M0+
 
+[unstable]
+build-std = ["core"]
+
 ## This part configures how to run (i.e. upload) the application to the board.
 ## If you have a debug probe, use `probe-run`, otherwise use the `elf2uf2-rs` line.
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
