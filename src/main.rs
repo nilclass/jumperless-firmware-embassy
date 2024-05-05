@@ -20,8 +20,8 @@ use embassy_time::Timer;
 use embassy_usb::class::cdc_acm;
 use {defmt_rtt as _, panic_probe as _};
 
-mod leds;
 mod ch446q;
+mod leds;
 mod shell;
 
 bind_interrupts!(struct Irqs {
@@ -36,7 +36,7 @@ const NUM_LEDS: usize = 111;
 static LEDS: Mutex<ThreadModeRawMutex, Option<leds::Leds<'static, PIO0, 0, NUM_LEDS>>> =
     Mutex::new(None);
 
-#[embassy_executor::task]
+/// One-off task playing the startup LED animation
 async fn startup_leds() {
     {
         if let Some(leds) = LEDS.lock().await.as_mut() {
@@ -45,9 +45,6 @@ async fn startup_leds() {
             leds.set_rgb8(110, (32, 0, 0));
             leds.flush().await;
         }
-    }
-    loop {
-        Timer::after_secs(2).await;
     }
 }
 
@@ -69,7 +66,10 @@ async fn main(spawner: Spawner) {
     }
 
     let pio::Pio {
-        mut common, sm0, irq0, ..
+        mut common,
+        sm0,
+        irq0,
+        ..
     } = pio::Pio::new(p.PIO1, Irqs);
 
     let mut ch446q = Ch446q::new(
@@ -79,7 +79,7 @@ async fn main(spawner: Spawner) {
         p.PIN_14,
         p.PIN_15,
         Output::new(p.PIN_24, Level::Low), // reset
-        Output::new(p.PIN_6, Level::Low), // cs_a
+        Output::new(p.PIN_6, Level::Low),  // cs_a
         irq0,
     );
 
@@ -126,8 +126,6 @@ async fn main(spawner: Spawner) {
 
     let usb_future = usb.run();
 
-    spawner.spawn(startup_leds()).unwrap();
-
     let shell_future = async {
         loop {
             class.wait_connection().await;
@@ -137,5 +135,6 @@ async fn main(spawner: Spawner) {
             info!("USB Serial Disconnected");
         }
     };
-    join(usb_future, shell_future).await;
+
+    join(usb_future, join(shell_future, startup_leds())).await;
 }

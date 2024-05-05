@@ -33,7 +33,6 @@ const HELP: &[&[u8]] = &[
     b"  rainbow-bounce  Play rainbow animation\r\n",
 ];
 
-
 impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
     pub fn new(class: &'a mut CdcAcmClass<'b, Driver<'b, USB>>) -> Self {
         Self {

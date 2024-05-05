@@ -1,7 +1,14 @@
-use embassy_time::Timer;
 use embassy_rp::{
-    dma::{AnyChannel, Channel}, gpio::Output, into_ref, pio::{Common, Config, Direction, FifoJoin, Instance, Irq, PioPin, ShiftConfig, ShiftDirection, StateMachine}, Peripheral, PeripheralRef
+    dma::{AnyChannel, Channel},
+    gpio::{Drive, Output},
+    into_ref,
+    pio::{
+        Common, Config, Direction, FifoJoin, Instance, Irq, PioPin, ShiftConfig, ShiftDirection,
+        StateMachine,
+    },
+    Peripheral, PeripheralRef,
 };
+use embassy_time::Timer;
 use fixed::traits::ToFixed;
 use pio::{InstructionOperands, SetDestination};
 
@@ -51,10 +58,7 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
         let data_pin = pio.make_pio_pin(data_pin);
         let clock_pin = pio.make_pio_pin(clock_pin);
 
-        cfg.use_program(
-            &pio.load_program(&program.program),
-            &[&clock_pin],
-        );
+        cfg.use_program(&pio.load_program(&program.program), &[&clock_pin]);
         cfg.set_out_pins(&[&data_pin]);
         cfg.set_set_pins(&[&data_pin]);
 
@@ -67,30 +71,29 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
         cfg.clock_divider = 16f32.to_fixed();
 
         sm.set_config(&cfg);
-        sm.set_pin_dirs(
-            Direction::Out,
-            &[&data_pin, &clock_pin],
-        );
+        sm.set_pin_dirs(Direction::Out, &[&data_pin, &clock_pin]);
 
         unsafe {
             sm.exec_instr(
                 InstructionOperands::SET {
                     destination: SetDestination::X,
                     data: 6,
-                }.encode(),
+                }
+                .encode(),
             );
             sm.exec_instr(
                 InstructionOperands::SET {
                     destination: SetDestination::Y,
                     data: 6,
-                }.encode(),
+                }
+                .encode(),
             );
         }
 
         sm.set_enable(true);
 
-        cs_a.set_drive_strength(embassy_rp::gpio::Drive::_8mA);
-        reset.set_drive_strength(embassy_rp::gpio::Drive::_12mA);
+        cs_a.set_drive_strength(Drive::_8mA);
+        reset.set_drive_strength(Drive::_12mA);
 
         Self {
             dma: dma.map_into(),
@@ -125,8 +128,8 @@ impl Packet {
     }
 }
 
-impl Into<u32> for Packet {
-    fn into(self) -> u32 {
-        (self.0 as u32) << 24
+impl From<Packet> for u32 {
+    fn from(val: Packet) -> Self {
+        (val.0 as u32) << 24
     }
 }
