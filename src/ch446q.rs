@@ -77,7 +77,7 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
         sm.set_config(&cfg);
         sm.set_pin_dirs(Direction::Out, &[&data_pin, &clock_pin]);
         for pin in &cs_pins {
-            sm.set_pin_dirs(Direction::Out, &[&pin]);
+            sm.set_pin_dirs(Direction::Out, &[pin]);
         }
 
         unsafe {

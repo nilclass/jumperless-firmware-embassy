@@ -68,7 +68,6 @@ async fn main(spawner: Spawner) {
     let pio::Pio {
         mut common,
         sm0,
-        irq0,
         ..
     } = pio::Pio::new(p.PIO1, Irqs);
 
@@ -96,7 +95,6 @@ async fn main(spawner: Spawner) {
         Output::new(p.PIN_24, Level::Low), // reset
         cs_pins,
         // Output::new(p.PIN_6, Level::Low),  // cs_a
-        irq0,
     );
 
     ch446q.reset().await;
