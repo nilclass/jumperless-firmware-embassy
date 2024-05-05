@@ -6,11 +6,13 @@
 #![no_main]
 #![feature(async_fn_traits, async_closure)]
 
+use ch446q::{Ch446q, Packet};
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
 use embassy_rp::bind_interrupts;
-use embassy_rp::peripherals::{PIO0, USB};
+use embassy_rp::gpio::{Level, Output};
+use embassy_rp::peripherals::{PIO0, PIO1, USB};
 use embassy_rp::{pio, usb};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
@@ -19,10 +21,12 @@ use embassy_usb::class::cdc_acm;
 use {defmt_rtt as _, panic_probe as _};
 
 mod leds;
+mod ch446q;
 mod shell;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
+    PIO1_IRQ_0 => pio::InterruptHandler<PIO1>;
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
 });
 
@@ -53,6 +57,8 @@ async fn main(spawner: Spawner) {
     let pio::Pio {
         mut common, sm0, ..
     } = pio::Pio::new(p.PIO0, Irqs);
+
+    // Initialize shared LEDs
     {
         *(LEDS.lock().await) = Some(leds::Leds::new(leds::Ws2812::new(
             &mut common,
@@ -62,14 +68,36 @@ async fn main(spawner: Spawner) {
         )));
     }
 
+    let pio::Pio {
+        mut common, sm0, irq0, ..
+    } = pio::Pio::new(p.PIO1, Irqs);
+
+    let mut ch446q = Ch446q::new(
+        &mut common,
+        sm0,
+        p.DMA_CH1,
+        p.PIN_14,
+        p.PIN_15,
+        Output::new(p.PIN_24, Level::Low), // reset
+        Output::new(p.PIN_6, Level::Low), // cs_a
+        irq0,
+    );
+
+    ch446q.reset().await;
+
+    // Make one example connection, between breadboard nodes [2] and [3]
+
+    // connect x0 (-> AI) with y1 (-> [2])
+    ch446q.write(Packet::new(0, 1, true)).await;
+    // connect x0 (-> AI) with y2 (-> [3])
+    ch446q.write(Packet::new(0, 2, true)).await;
+
+    // Initialize USB driver
     let usb_driver = usb::Driver::new(p.USB, Irqs);
     let mut config = embassy_usb::Config::new(0x1D50, 0xACAB);
     config.manufacturer = Some("Architeuthis Flux");
     config.product = Some("Jumperless");
     config.serial_number = Some("0");
-
-    info!("2");
-
     config.device_class = 0xEF;
     config.device_sub_class = 0x02;
     config.device_protocol = 0x01;
