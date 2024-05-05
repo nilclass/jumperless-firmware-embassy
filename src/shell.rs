@@ -2,6 +2,8 @@ use embassy_rp::{peripherals::USB, usb::Driver};
 use embassy_time::Duration;
 use embassy_usb::{class::cdc_acm::CdcAcmClass, driver::EndpointError};
 
+use crate::nets::SupplySwitchPos;
+
 pub struct Disconnected {}
 
 impl From<EndpointError> for Disconnected {
@@ -29,8 +31,9 @@ pub struct Shell<'a, 'b, const BUF_SIZE: usize> {
 
 const HELP: &[&[u8]] = &[
     b"Available instructions:\r\n",
-    b"  help            Print this help text\r\n",
-    b"  rainbow-bounce  Play rainbow animation\r\n",
+    b"  help                    Print this help text\r\n",
+    b"  rainbow-bounce          Play rainbow animation\r\n",
+    b"  switch-pos <5V|3V3|8V>  Set switch position\r\n",
 ];
 
 impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
@@ -96,6 +99,30 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
                 "rainbow-bounce" => {
                     if let Some(leds) = crate::LEDS.lock().await.as_mut() {
                         leds.rainbow_bounce(Duration::from_millis(40)).await;
+                    }
+                }
+                "switch-pos 3V3" => {
+                    if let Some(nets) = crate::NETS.lock().await.as_mut() {
+                        nets.supply_switch_pos = SupplySwitchPos::_3V3;
+                        if let Some(leds) = crate::LEDS.lock().await.as_mut() {
+                            leds.set_from_nets(&nets).await;
+                        }
+                    }
+                }
+                "switch-pos 5V" => {
+                    if let Some(nets) = crate::NETS.lock().await.as_mut() {
+                        nets.supply_switch_pos = SupplySwitchPos::_5V;
+                        if let Some(leds) = crate::LEDS.lock().await.as_mut() {
+                            leds.set_from_nets(&nets).await;
+                        }
+                    }
+                }
+                "switch-pos 8V" => {
+                    if let Some(nets) = crate::NETS.lock().await.as_mut() {
+                        nets.supply_switch_pos = SupplySwitchPos::_8V;
+                        if let Some(leds) = crate::LEDS.lock().await.as_mut() {
+                            leds.set_from_nets(&nets).await;
+                        }
                     }
                 }
                 _ => {

@@ -22,6 +22,7 @@ use {defmt_rtt as _, panic_probe as _};
 
 mod ch446q;
 mod leds;
+mod nets;
 mod shell;
 
 bind_interrupts!(struct Irqs {
@@ -36,6 +37,8 @@ const NUM_LEDS: usize = 111;
 static LEDS: Mutex<ThreadModeRawMutex, Option<leds::Leds<'static, PIO0, 0, NUM_LEDS>>> =
     Mutex::new(None);
 
+static NETS: Mutex<ThreadModeRawMutex, Option<nets::Nets>> = Mutex::new(None);
+
 /// One-off task playing the startup LED animation
 async fn startup_leds() {
     {
@@ -44,6 +47,12 @@ async fn startup_leds() {
             Timer::after_millis(2).await;
             leds.set_rgb8(110, (32, 0, 0));
             leds.flush().await;
+
+            Timer::after_millis(2).await;
+
+            if let Some(nets) = NETS.lock().await.as_ref() {
+                leds.set_from_nets(nets).await;
+            }
         }
     }
 }
@@ -51,11 +60,16 @@ async fn startup_leds() {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
+
+    // Initialize shared NETS
+    {
+        *(NETS.lock().await) = Some(nets::Nets::default());
+    }
+
+    // Configure PIO0 to control ws2812 LEDs
     let pio::Pio {
         mut common, sm0, ..
     } = pio::Pio::new(p.PIO0, Irqs);
-
-    // Initialize shared LEDs
     {
         *(LEDS.lock().await) = Some(leds::Leds::new(leds::Ws2812::new(
             &mut common,
@@ -65,10 +79,9 @@ async fn main(spawner: Spawner) {
         )));
     }
 
+    // Configure PIO1 to control ch446q chips
     let pio::Pio {
-        mut common,
-        sm0,
-        ..
+        mut common, sm0, ..
     } = pio::Pio::new(p.PIO1, Irqs);
 
     let cs_pins = [
@@ -101,46 +114,43 @@ async fn main(spawner: Spawner) {
 
     // Make one example connection, between breadboard nodes [2] and [3]
 
-    ch446q.set_chip(Chip::A);
+    // ch446q.set_chip(Chip::A);
 
-    let path_on: [u32; 2] = [
-        Packet::new(0, 1, true).into(),
-        Packet::new(0, 2, true).into(),
-    ];
+    // let path_on: [u32; 2] = [
+    //     Packet::new(0, 1, true).into(),
+    //     Packet::new(0, 2, true).into(),
+    // ];
 
-    ch446q.write_raw_path(&path_on).await;
+    // ch446q.write_raw_path(&path_on).await;
 
-    let path_off: [u32; 2] = [
-        Packet::new(0, 1, false).into(),
-        Packet::new(0, 2, false).into(),
-    ];
+    // let path_off: [u32; 2] = [
+    //     Packet::new(0, 1, false).into(),
+    //     Packet::new(0, 2, false).into(),
+    // ];
 
-    // Uncomment this to test switching between Chip A and Chip B:
-    /*
-    loop {
-        ch446q.set_chip(Chip::A);
+    //     // Uncomment this to test switching between Chip A and Chip B:
+    //     loop {
+    //         ch446q.set_chip(Chip::A);
 
-        ch446q.write_raw_path(&path_on).await;
+    //         ch446q.write_raw_path(&path_on).await;
 
-        Timer::after_secs(1).await;
+    //         Timer::after_secs(1).await;
 
-        ch446q.write_raw_path(&path_off).await;
+    //         ch446q.write_raw_path(&path_off).await;
 
-        Timer::after_secs(1).await;
+    //         Timer::after_secs(1).await;
 
-        ch446q.set_chip(Chip::B);
+    //         ch446q.set_chip(Chip::B);
 
-        ch446q.write_raw_path(&path_on).await;
+    //         ch446q.write_raw_path(&path_on).await;
 
-        Timer::after_secs(1).await;
+    //         Timer::after_secs(1).await;
 
-        ch446q.write_raw_path(&path_off).await;
+    //         ch446q.write_raw_path(&path_off).await;
 
-        Timer::after_secs(1).await;
-}
+    //         Timer::after_secs(1).await;
+    // }
 
-    */
-    
     // // connect x0 (-> AI) with y1 (-> [2])
     // ch446q.write(Packet::new(0, 1, true)).await;
     // // connect x0 (-> AI) with y2 (-> [3])

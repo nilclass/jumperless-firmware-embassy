@@ -1,3 +1,4 @@
+use crate::nets::Nets;
 use embassy_rp::dma::{AnyChannel, Channel};
 use embassy_rp::pio::{
     Common, Config, FifoJoin, Instance, PioPin, ShiftConfig, ShiftDirection, StateMachine,
@@ -129,6 +130,55 @@ impl<'d, P: Instance, const S: usize, const N: usize> Leds<'d, P, S, N> {
 
         Timer::after_millis(2).await;
         self.off().await;
+    }
+
+    pub async fn set_from_nets(&mut self, nets: &Nets) {
+        self.words.fill(0);
+        for net in &nets.nets {
+            for node in &net.nodes {
+                if let Some(pixel) = node.pixel() {
+                    self.set_rgb8(pixel as usize, net.color);
+                }
+            }
+        }
+        let gnd = nets.nets[0].color;
+        let v5 = nets.nets[1].color;
+        let v33 = nets.nets[2].color;
+
+        for i in 80..=109 {
+            self.set_rgb8(i, (0x02, 0x00, 0x08)); // headerglow
+        }
+        self.set_rgb8(83, gnd);
+        self.set_rgb8(108, gnd);
+        self.set_rgb8(109, v5);
+        self.set_rgb8(96, v33);
+        self.set_rgb8(106, v5);
+
+        for i in [
+            71, 72, 75, 76, 79, // top negative rail
+            68, 67, 64, 63, 60, // bottom negative rail
+        ] {
+            self.set_rgb8(i, gnd);
+        }
+
+        let v8p = (0x30, 0x1A, 0x02);
+        let v8n = (0x12, 0x09, 0x32);
+
+        let (top, bottom) = match nets.supply_switch_pos {
+            crate::nets::SupplySwitchPos::_3V3 => (v33, v33),
+            crate::nets::SupplySwitchPos::_5V => (v5, v5),
+            crate::nets::SupplySwitchPos::_8V => (v8p, v8n),
+        };
+
+        for i in [70, 73, 74, 77, 78] {
+            self.set_rgb8(i, top);
+        }
+
+        for i in [69, 66, 65, 62, 61] {
+            self.set_rgb8(i, bottom);
+        }
+
+        self.flush().await;
     }
 }
 

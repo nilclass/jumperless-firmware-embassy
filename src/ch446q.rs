@@ -3,7 +3,8 @@ use embassy_rp::{
     gpio::{Drive, Output},
     into_ref,
     pio::{
-        Common, Config, Direction, FifoJoin, Instance, Pin, PioPin, ShiftConfig, ShiftDirection, StateMachine
+        Common, Config, Direction, FifoJoin, Instance, Pin, PioPin, ShiftConfig, ShiftDirection,
+        StateMachine,
     },
     Peripheral, PeripheralRef,
 };
@@ -153,6 +154,30 @@ pub enum Chip {
     J,
     K,
     L,
+}
+
+pub struct InvalidChip;
+
+impl TryFrom<char> for Chip {
+    type Error = InvalidChip;
+
+    fn try_from(value: char) -> Result<Self, Self::Error> {
+        match value {
+            'A' => Ok(Chip::A),
+            'B' => Ok(Chip::B),
+            'C' => Ok(Chip::C),
+            'D' => Ok(Chip::D),
+            'E' => Ok(Chip::E),
+            'F' => Ok(Chip::F),
+            'G' => Ok(Chip::G),
+            'H' => Ok(Chip::H),
+            'I' => Ok(Chip::I),
+            'J' => Ok(Chip::J),
+            'K' => Ok(Chip::K),
+            'L' => Ok(Chip::L),
+            _ => Err(InvalidChip),
+        }
+    }
 }
 
 pub struct Packet(u8);
