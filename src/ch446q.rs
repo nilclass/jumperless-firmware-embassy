@@ -3,8 +3,7 @@ use embassy_rp::{
     gpio::{Drive, Output},
     into_ref,
     pio::{
-        Common, Config, Direction, FifoJoin, Instance, Irq, PioPin, ShiftConfig, ShiftDirection,
-        StateMachine,
+        Common, Config, Direction, FifoJoin, Instance, Pin, PioPin, ShiftConfig, ShiftDirection, StateMachine
     },
     Peripheral, PeripheralRef,
 };
@@ -15,9 +14,9 @@ use pio::{InstructionOperands, SetDestination};
 pub struct Ch446q<'d, P: Instance, const S: usize> {
     dma: PeripheralRef<'d, AnyChannel>,
     sm: StateMachine<'d, P, S>,
-    cs_a: Output<'d>,
+    config: Config<'d, P>,
+    cs_pins: [Pin<'d, P>; 12],
     reset: Output<'d>,
-    irq0: Irq<'d, P, 0>,
 }
 
 impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
@@ -28,8 +27,7 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
         data_pin: impl PioPin,
         clock_pin: impl PioPin,
         mut reset: Output<'d>,
-        mut cs_a: Output<'d>,
-        irq0: Irq<'d, P, 0>,
+        mut cs_pins: [Pin<'d, P>; 12],
     ) -> Self {
         into_ref!(dma);
 
@@ -38,13 +36,15 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
             .side_set 1
             .wrap_target
             bitloop:
+              // Shift out to DATA, toggling CLK via side-set:
               out pins, 1        side 0x0 [2]
               nop                side 0x1 [2]
               jmp x-- bitloop    side 0x1
               out pins, 1        side 0x1
               mov x, y           side 0x1
-              irq 0              side 0x1
-              wait 0 irq 0 rel   side 0x1
+              // Pulse CS_x line when done:
+              set pins 1         side 0x1 [3]
+              set pins 0         side 0x1
               jmp !osre bitloop  side 0x0
             public entry_point:
               pull ifempty       side 0x0 [1]
@@ -58,9 +58,13 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
         let data_pin = pio.make_pio_pin(data_pin);
         let clock_pin = pio.make_pio_pin(clock_pin);
 
+        for pin in &mut cs_pins {
+            pin.set_drive_strength(Drive::_8mA);
+        }
+
         cfg.use_program(&pio.load_program(&program.program), &[&clock_pin]);
         cfg.set_out_pins(&[&data_pin]);
-        cfg.set_set_pins(&[&data_pin]);
+        cfg.set_set_pins(&[&cs_pins[0]]);
 
         cfg.fifo_join = FifoJoin::TxOnly;
         cfg.shift_out = ShiftConfig {
@@ -72,6 +76,9 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
 
         sm.set_config(&cfg);
         sm.set_pin_dirs(Direction::Out, &[&data_pin, &clock_pin]);
+        for pin in &cs_pins {
+            sm.set_pin_dirs(Direction::Out, &[&pin]);
+        }
 
         unsafe {
             sm.exec_instr(
@@ -92,14 +99,13 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
 
         sm.set_enable(true);
 
-        cs_a.set_drive_strength(Drive::_8mA);
         reset.set_drive_strength(Drive::_12mA);
 
         Self {
+            config: cfg,
             dma: dma.map_into(),
             sm,
-            cs_a,
-            irq0,
+            cs_pins,
             reset,
         }
     }
@@ -110,14 +116,43 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
         self.reset.set_low();
     }
 
+    pub fn set_chip(&mut self, chip: Chip) {
+        // wait for TX queue to empty
+        while !self.sm.tx().empty() {}
+        // disable state machine, while modifying config
+        self.sm.set_enable(false);
+        let pin = &self.cs_pins[chip as u8 as usize];
+        // use correct CS pin for SET instructions
+        self.config.set_set_pins(&[pin]);
+        // apply configuration
+        self.sm.set_config(&self.config);
+        // re-enable state machine
+        self.sm.set_enable(true);
+    }
+
+    pub async fn write_raw_path(&mut self, path: &[u32]) {
+        self.sm.tx().dma_push(self.dma.reborrow(), path).await;
+    }
+
     pub async fn write(&mut self, packet: Packet) {
         self.sm.tx().wait_push(packet.into()).await;
-        self.irq0.wait().await;
-        self.cs_a.set_high();
-        Timer::after_micros(6).await;
-        self.cs_a.set_low();
-        Timer::after_micros(6).await;
     }
+}
+
+#[repr(u8)]
+pub enum Chip {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
 }
 
 pub struct Packet(u8);

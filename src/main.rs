@@ -6,7 +6,7 @@
 #![no_main]
 #![feature(async_fn_traits, async_closure)]
 
-use ch446q::{Ch446q, Packet};
+use ch446q::{Ch446q, Chip, Packet};
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
@@ -72,6 +72,21 @@ async fn main(spawner: Spawner) {
         ..
     } = pio::Pio::new(p.PIO1, Irqs);
 
+    let cs_pins = [
+        common.make_pio_pin(p.PIN_6),
+        common.make_pio_pin(p.PIN_7),
+        common.make_pio_pin(p.PIN_8),
+        common.make_pio_pin(p.PIN_9),
+        common.make_pio_pin(p.PIN_10),
+        common.make_pio_pin(p.PIN_11),
+        common.make_pio_pin(p.PIN_12),
+        common.make_pio_pin(p.PIN_13),
+        common.make_pio_pin(p.PIN_20),
+        common.make_pio_pin(p.PIN_21),
+        common.make_pio_pin(p.PIN_22),
+        common.make_pio_pin(p.PIN_23),
+    ];
+
     let mut ch446q = Ch446q::new(
         &mut common,
         sm0,
@@ -79,7 +94,8 @@ async fn main(spawner: Spawner) {
         p.PIN_14,
         p.PIN_15,
         Output::new(p.PIN_24, Level::Low), // reset
-        Output::new(p.PIN_6, Level::Low),  // cs_a
+        cs_pins,
+        // Output::new(p.PIN_6, Level::Low),  // cs_a
         irq0,
     );
 
@@ -87,10 +103,50 @@ async fn main(spawner: Spawner) {
 
     // Make one example connection, between breadboard nodes [2] and [3]
 
-    // connect x0 (-> AI) with y1 (-> [2])
-    ch446q.write(Packet::new(0, 1, true)).await;
-    // connect x0 (-> AI) with y2 (-> [3])
-    ch446q.write(Packet::new(0, 2, true)).await;
+    ch446q.set_chip(Chip::A);
+
+    let path_on: [u32; 2] = [
+        Packet::new(0, 1, true).into(),
+        Packet::new(0, 2, true).into(),
+    ];
+
+    ch446q.write_raw_path(&path_on).await;
+
+    let path_off: [u32; 2] = [
+        Packet::new(0, 1, false).into(),
+        Packet::new(0, 2, false).into(),
+    ];
+
+    // Uncomment this to test switching between Chip A and Chip B:
+    /*
+    loop {
+        ch446q.set_chip(Chip::A);
+
+        ch446q.write_raw_path(&path_on).await;
+
+        Timer::after_secs(1).await;
+
+        ch446q.write_raw_path(&path_off).await;
+
+        Timer::after_secs(1).await;
+
+        ch446q.set_chip(Chip::B);
+
+        ch446q.write_raw_path(&path_on).await;
+
+        Timer::after_secs(1).await;
+
+        ch446q.write_raw_path(&path_off).await;
+
+        Timer::after_secs(1).await;
+}
+
+    */
+    
+    // // connect x0 (-> AI) with y1 (-> [2])
+    // ch446q.write(Packet::new(0, 1, true)).await;
+    // // connect x0 (-> AI) with y2 (-> [3])
+    // ch446q.write(Packet::new(0, 2, true)).await;
 
     // Initialize USB driver
     let usb_driver = usb::Driver::new(p.USB, Irqs);
