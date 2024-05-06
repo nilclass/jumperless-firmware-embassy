@@ -1,6 +1,9 @@
 use embassy_rp::watchdog::Watchdog;
-use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::{Channel, Sender}};
-use embassy_time::{Timer, Duration};
+use embassy_sync::{
+    blocking_mutex::raw::ThreadModeRawMutex,
+    channel::{Channel, Sender},
+};
+use embassy_time::{Duration, Timer};
 
 use crate::bus;
 

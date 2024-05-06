@@ -1,6 +1,15 @@
-use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::{Channel, Sender}};
-use embassy_time::{Timer, Duration};
-use crate::{bus, LEDS, NETS};
+use crate::{bus, NETS};
+use embassy_rp::peripherals::PIO0;
+use embassy_sync::{
+    blocking_mutex::raw::ThreadModeRawMutex,
+    channel::{Channel, Sender},
+};
+use embassy_time::{Duration, Timer};
+
+/// Number of LEDs on the board. This will vary in the future, depending on hardware revision.
+const NUM_LEDS: usize = 111;
+
+type Leds = crate::leds::Leds<'static, PIO0, 0, NUM_LEDS>;
 
 static CHANNEL: bus::Channel<Message> = Channel::new();
 
@@ -20,43 +29,37 @@ impl bus::BusMessage for Message {
 }
 
 #[embassy_executor::task]
-pub async fn main() {
+pub async fn main(mut leds: Leds) {
     // Play startup animation
-    startup_leds().await;
+    startup_leds(&mut leds).await;
 
     // Set up normal state (colors indicate nets)
-    update_from_nets().await;
+    update_from_nets(&mut leds).await;
 
     loop {
         match CHANNEL.receive().await {
             Message::PlayRainbowBounce => {
-                if let Some(leds) = LEDS.lock().await.as_mut() {
-                    leds.rainbow_bounce(Duration::from_millis(40)).await;
-                }
+                leds.rainbow_bounce(Duration::from_millis(40)).await;
                 // restore normal state
-                update_from_nets().await;
+                update_from_nets(&mut leds).await;
             }
             Message::UpdateFromNets => {
-                update_from_nets().await;
+                update_from_nets(&mut leds).await;
             }
         }
     }
 }
 
-async fn startup_leds() {
-    if let Some(leds) = LEDS.lock().await.as_mut() {
-        leds.startup_colors().await;
-        Timer::after_millis(2).await;
-        leds.set_rgb8(110, (32, 0, 0));
-        leds.flush().await;
-    }
+async fn startup_leds(leds: &mut Leds) {
+    leds.startup_colors().await;
+    Timer::after_millis(2).await;
+    leds.set_rgb8(110, (32, 0, 0));
+    leds.flush().await;
 }
 
-async fn update_from_nets() {
+async fn update_from_nets(leds: &mut Leds) {
     Timer::after_millis(2).await;
-    if let Some(leds) = LEDS.lock().await.as_mut() {
-        if let Some(nets) = NETS.lock().await.as_mut() {
-            leds.update_from_nets(&nets).await;
-        }
+    if let Some(nets) = NETS.lock().await.as_ref() {
+        leds.update_from_nets(nets).await;
     }
 }

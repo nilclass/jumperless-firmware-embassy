@@ -6,7 +6,7 @@
 #![no_main]
 #![feature(async_fn_traits, async_closure)]
 
-use ch446q::{Ch446q, Chip, Packet};
+use ch446q::Ch446q;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
@@ -17,8 +17,6 @@ use embassy_rp::watchdog::Watchdog;
 use embassy_rp::{pio, usb};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::channel::Channel;
-use embassy_time::Timer;
 use embassy_usb::class::cdc_acm;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -27,8 +25,8 @@ pub mod ch446q;
 /// LED functionality / hardware integration (WS2812 driver)
 pub mod leds;
 
-pub mod nets;
 pub mod chips;
+pub mod nets;
 
 /// USB-serial based shell
 pub mod shell;
@@ -51,12 +49,6 @@ bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
 });
 
-/// Number of LEDs on the board. This will vary in the future, depending on hardware revision.
-const NUM_LEDS: usize = 111;
-
-static LEDS: Mutex<ThreadModeRawMutex, Option<leds::Leds<'static, PIO0, 0, NUM_LEDS>>> =
-    Mutex::new(None);
-
 static NETS: Mutex<ThreadModeRawMutex, Option<nets::Nets>> = Mutex::new(None);
 
 #[embassy_executor::main]
@@ -72,14 +64,7 @@ async fn main(spawner: Spawner) {
     let pio::Pio {
         mut common, sm0, ..
     } = pio::Pio::new(p.PIO0, Irqs);
-    {
-        *(LEDS.lock().await) = Some(leds::Leds::new(leds::Ws2812::new(
-            &mut common,
-            sm0,
-            p.DMA_CH0,
-            p.PIN_25,
-        )));
-    }
+    let leds = leds::Leds::new(leds::Ws2812::new(&mut common, sm0, p.DMA_CH0, p.PIN_25));
 
     // Configure PIO1 to control ch446q chips
     let pio::Pio {
@@ -158,8 +143,10 @@ async fn main(spawner: Spawner) {
     // // connect x0 (-> AI) with y2 (-> [3])
     // ch446q.write(Packet::new(0, 2, true)).await;
 
-    spawner.spawn(task::watchdog::main(Watchdog::new(p.WATCHDOG))).unwrap();
-    spawner.spawn(task::leds::main()).unwrap();
+    spawner
+        .spawn(task::watchdog::main(Watchdog::new(p.WATCHDOG)))
+        .unwrap();
+    spawner.spawn(task::leds::main(leds)).unwrap();
 
     // Initialize USB driver
     let usb_driver = usb::Driver::new(p.USB, Irqs);

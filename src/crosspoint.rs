@@ -1,4 +1,3 @@
-
 trait CrosspointArray {
     /// Select chip with index `i`
     ///
