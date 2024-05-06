@@ -1,4 +1,8 @@
+use core::num::NonZeroU8;
+
 use heapless::Vec;
+
+use crate::ch446q::Chip;
 
 const MAX_NODES_PER_NET: usize = 64;
 const MAX_NETS: usize = 64;
@@ -6,15 +10,28 @@ const MAX_NETS: usize = 64;
 /// Represents a set of connected nodes
 #[derive(Clone)]
 pub struct Net {
-    pub number: u8,
+    pub id: NetId,
     pub nodes: Vec<Node, MAX_NODES_PER_NET>,
     pub color: (u8, u8, u8),
 }
 
+#[derive(Copy, Clone)]
+pub struct NetId(NonZeroU8);
+
+impl From<u8> for NetId {
+    fn from(value: u8) -> Self {
+        Self(NonZeroU8::new(value).unwrap())
+    }
+}
+
 impl Net {
-    fn new(number: u8, nodes: Vec<Node, MAX_NODES_PER_NET>, color: (u8, u8, u8)) -> Self {
+    fn new<I: Into<NetId>>(
+        id: I,
+        nodes: Vec<Node, MAX_NODES_PER_NET>,
+        color: (u8, u8, u8),
+    ) -> Self {
         Net {
-            number,
+            id: id.into(),
             nodes,
             color,
         }
@@ -223,6 +240,17 @@ pub enum SupplySwitchPos {
     _8V,
 }
 
+impl SupplySwitchPos {
+    pub fn parse(input: &str) -> Option<Self> {
+        match input {
+            "3V3" => Some(Self::_3V3),
+            "5V" => Some(Self::_5V),
+            "8V" => Some(Self::_8V),
+            _ => None,
+        }
+    }
+}
+
 /*
 { 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,
                                     30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,
@@ -233,3 +261,48 @@ pub enum SupplySwitchPos {
 
                                     }
 */
+
+struct ChipStatus([ChipStatusEntry; 12]);
+
+struct ChipStatusEntry {
+    x: [Option<NetId>; 16],
+    y: [Option<NetId>; 8],
+}
+
+impl ChipStatus {
+    fn clear(&mut self) {
+        for entry in &mut self.0 {
+            entry.x.fill(None);
+            entry.y.fill(None);
+        }
+    }
+
+    fn set(&mut self, chip: Chip, dimension: Dimension, index: u8, net: NetId) {
+        let entry = &mut self.0[chip as u8 as usize];
+        match dimension {
+            Dimension::X => entry.x[index as usize] = Some(net),
+            Dimension::Y => entry.y[index as usize] = Some(net),
+        }
+    }
+}
+
+enum Dimension {
+    X,
+    Y,
+}
+
+trait ChipLayout {
+    fn node_to_chip_port(&self, node: Node) -> (Chip, Dimension, u8);
+}
+
+fn nets_to_chip_connections<L: ChipLayout>(layout: L, nets: &Nets, chip_status: &mut ChipStatus) {
+    chip_status.clear();
+
+    // populate net id for all node ports
+    for net in &nets.nets {
+        for node in &net.nodes {
+            let (chip, dimension, index) = layout.node_to_chip_port(*node);
+            chip_status.set(chip, dimension, index, net.id);
+        }
+    }
+}

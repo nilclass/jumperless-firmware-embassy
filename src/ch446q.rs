@@ -140,6 +140,7 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Chip {
     A,

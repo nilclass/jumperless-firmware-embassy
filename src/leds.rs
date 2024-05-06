@@ -11,7 +11,7 @@ use micromath::F32Ext;
 
 const DEFAULTBRIGHTNESS: i32 = 32;
 
-/// Manages and controls the LEDs
+/// In-memory buffer for LED state
 ///
 /// The LED colors are held in an in-memory buffer. The buffer can be manipulated
 /// by calling [`set_rgb8`], [`set_rgb`] or [`set_hsv`], and then written to the
@@ -132,7 +132,16 @@ impl<'d, P: Instance, const S: usize, const N: usize> Leds<'d, P, S, N> {
         self.off().await;
     }
 
-    pub async fn set_from_nets(&mut self, nets: &Nets) {
+    /// Update LEDs to reflect the given nets
+    ///
+    /// Flushes changes to the board when done.
+    ///
+    /// In detail, this:
+    /// - lights up the breadboard & nano nodes corresponding to each net
+    /// - lights up the rails (respecting `nets.supply_switch_pos`)
+    /// - adds headerglow to the unused nano LEDs
+    /// - turns off all other LEDs
+    pub async fn update_from_nets(&mut self, nets: &Nets) {
         self.words.fill(0);
         for net in &nets.nets {
             for node in &net.nodes {

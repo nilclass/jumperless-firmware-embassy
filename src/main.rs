@@ -13,17 +13,37 @@ use embassy_futures::join::join;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{PIO0, PIO1, USB};
+use embassy_rp::watchdog::Watchdog;
 use embassy_rp::{pio, usb};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
+use embassy_sync::channel::Channel;
 use embassy_time::Timer;
 use embassy_usb::class::cdc_acm;
 use {defmt_rtt as _, panic_probe as _};
 
-mod ch446q;
-mod leds;
-mod nets;
-mod shell;
+/// Driver for an array of 12 CH446Q crosspoint switches
+pub mod ch446q;
+/// LED functionality / hardware integration (WS2812 driver)
+pub mod leds;
+
+pub mod nets;
+pub mod chips;
+
+/// USB-serial based shell
+pub mod shell;
+
+pub mod crosspoint;
+
+/// The bus routes messages to one of the top-level tasks
+///
+/// Most of the [`task`]s define a type of [`bus::BusMessage`] that controls the task's behavior.
+///
+/// Other tasks can use [`bus::inject`] to send these messages to the respective recipient.
+pub mod bus;
+
+/// Top-level tasks; always running.
+pub mod task;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
@@ -39,29 +59,11 @@ static LEDS: Mutex<ThreadModeRawMutex, Option<leds::Leds<'static, PIO0, 0, NUM_L
 
 static NETS: Mutex<ThreadModeRawMutex, Option<nets::Nets>> = Mutex::new(None);
 
-/// One-off task playing the startup LED animation
-async fn startup_leds() {
-    {
-        if let Some(leds) = LEDS.lock().await.as_mut() {
-            leds.startup_colors().await;
-            Timer::after_millis(2).await;
-            leds.set_rgb8(110, (32, 0, 0));
-            leds.flush().await;
-
-            Timer::after_millis(2).await;
-
-            if let Some(nets) = NETS.lock().await.as_ref() {
-                leds.set_from_nets(nets).await;
-            }
-        }
-    }
-}
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    // Initialize shared NETS
+    // Initialize shared NETS (FIXME: rename this to STATE? it's more than just nets...)
     {
         *(NETS.lock().await) = Some(nets::Nets::default());
     }
@@ -156,6 +158,9 @@ async fn main(spawner: Spawner) {
     // // connect x0 (-> AI) with y2 (-> [3])
     // ch446q.write(Packet::new(0, 2, true)).await;
 
+    spawner.spawn(task::watchdog::main(Watchdog::new(p.WATCHDOG))).unwrap();
+    spawner.spawn(task::leds::main()).unwrap();
+
     // Initialize USB driver
     let usb_driver = usb::Driver::new(p.USB, Irqs);
     let mut config = embassy_usb::Config::new(0x1D50, 0xACAB);
@@ -200,5 +205,5 @@ async fn main(spawner: Spawner) {
         }
     };
 
-    join(usb_future, join(shell_future, startup_leds())).await;
+    join(usb_future, shell_future).await;
 }
