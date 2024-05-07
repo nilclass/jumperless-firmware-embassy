@@ -1,7 +1,8 @@
 use embassy_rp::{peripherals::USB, usb::Driver};
 use embassy_time::Duration;
-use heapless::Vec;
+// use heapless::Vec;
 use embassy_usb::{class::cdc_acm::CdcAcmClass, driver::EndpointError};
+use line_buffer::LineBuffer;
 
 use crate::nets::SupplySwitchPos;
 use crate::{bus, task};
@@ -68,9 +69,7 @@ impl From<Overflow> for &'static [u8] {
 
 pub struct Shell<'a, 'b, const BUF_SIZE: usize> {
     class: &'a mut CdcAcmClass<'b, Driver<'b, USB>>,
-    input_buf: Vec<u8, BUF_SIZE>,
-    // offset of the cursor from the *end* of the line
-    cursor_offset: usize,
+    buffer: LineBuffer<BUF_SIZE>,
 }
 
 const HELP: &[&[u8]] = &[
@@ -85,8 +84,7 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
     pub fn new(class: &'a mut CdcAcmClass<'b, Driver<'b, USB>>) -> Self {
         Self {
             class,
-            input_buf: Vec::new(),
-            cursor_offset: 0,
+            buffer: LineBuffer::new(),
         }
     }
 
@@ -109,20 +107,16 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
                 if csi {
                     match c {
                         b'C' => { // RIGHT
-                            if self.cursor_offset > 0 {
-                                self.cursor_offset -= 1;
-                            }
+                            self.buffer.move_right();
                         }
                         b'D' => { // LEFT
-                            if self.cursor_offset < self.input_buf.len() {
-                                self.cursor_offset += 1;
-                            }
+                            self.buffer.move_left();
                         }
                         b'F' => { // END
-                            self.cursor_offset = 0;
+                            self.buffer.move_end();
                         }
                         b'H' => { // HOME
-                            self.cursor_offset = if self.input_buf.len() == 0 { 0 } else { self.input_buf.len() - 1 };
+                            self.buffer.move_home();
                         }
                         _ => {
                             defmt::debug!("Unhandled CSI: {}", c);
@@ -137,24 +131,19 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
                     }
                     escape = false;
                 } else {
-                    if c == b'\r' {
+                    if c == b'\r' { // ENTER
                         submit = true;
                     } else if c == 27 { // ESC
                         escape = true;
-                    } else if c == 127 {
-                        // backspace
-                        if self.input_buf.len() - self.cursor_offset > 0 {
-                            self.input_buf.remove(self.input_buf.len() - 1 - self.cursor_offset);
-                        }
+                    } else if c == 3 { // Ctrl+C
+                        self.buffer.reset();
+                        self.class.write_packet(b"\r\n^C\r\n").await?;
+                    } else if c == 127 { // BACKSPACE
+                        self.buffer.backspace();
                     } else if c.is_ascii_graphic() || c == b' ' {
-                        if let Err(_) = self.input_buf.insert(self.input_buf.len() - self.cursor_offset, c) {
-                            self.input_buf.clear();
+                        if let Err(_) = self.buffer.insert(c) {
+                            self.buffer.reset();
                             self.class.write_packet(b"\r\n -- overflow; buffer cleared --\r\n").await?;
-                        }
-                        if self.input_buf.len() == 0 {
-                            self.cursor_offset = 0;
-                        } else if self.cursor_offset > self.input_buf.len() - 1 {
-                            self.cursor_offset -= 1;
                         }
                     } else if c.is_ascii_control() {
                         defmt::debug!("Unhandled control character: {}", c);
@@ -173,37 +162,43 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
 
     /// (Re-) print the prompt, including the input buffer
     async fn prompt(&mut self) -> Result<(), Disconnected> {
+        // print prompt at beginning of line
         self.class.write_packet(b"\r> ").await?;
-        if self.input_buf.len() > 0 {
+
+        // print current input buffer
+        let line = self.buffer.content();
+        if line.len() > 0 {
             self.class
-                .write_packet(&self.input_buf)
+                .write_packet(line)
                 .await?;
         }
-        // overwrite one character, in case it was removed.
+        // overwrite one more character after the input, to deal with backspace
         self.class.write_packet(&[b' ', 8]).await?;
-        if self.cursor_offset > 0 {
-            let cursor_move = [27, b'[', b'0' + self.cursor_offset as u8, b'D'];
-            defmt::debug!("Cursor offset {}, move {:?}", self.cursor_offset, cursor_move);
-            self.class.write_packet(&cursor_move).await?;
+
+        // move cursor to correct position
+        let cursor = self.buffer.cursor() + 2;
+        self.class.write_packet(&[b'\r']).await?;;
+        for i in 0..cursor {
+            self.class.write_packet(&[27, b'[', b'C']).await?;
         }
         Ok(())
     }
 
     /// Process the input buffer, and execute any instruction found
     async fn process(&mut self) -> Result<(), Disconnected> {
-        if self.input_buf.is_empty() {
+        let buffer = self.buffer.content();
+        if buffer.is_empty() {
             self.prompt().await?;
             return Ok(());
         }
-        if let Ok(input) = core::str::from_utf8(&self.input_buf) {
+        if let Ok(input) = core::str::from_utf8(buffer) {
             match Instruction::parse(input) {
                 Ok(Some(instruction)) => self.execute(instruction).await?,
                 Ok(None) => {}
                 Err(message) => self.class.write_packet(message).await?,
             }
         }
-        self.input_buf.clear();
-        self.cursor_offset = 0;
+        self.buffer.reset();
         self.prompt().await?;
         Ok(())
     }
