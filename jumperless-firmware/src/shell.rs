@@ -11,7 +11,8 @@ enum Instruction {
     Help,
     Reset,
     RainbowBounce,
-    SwitchPos(SupplySwitchPos),
+    SetSwitchPos(SupplySwitchPos),
+    PrintSwitchPos,
 }
 
 impl Instruction {
@@ -32,12 +33,15 @@ impl Instruction {
                     Ok(Some(Instruction::RainbowBounce))
                 }
                 "switch-pos" => {
-                    let pos = shift_arg(&mut tokens)?;
-                    no_more_args(&mut tokens)?;
-                    if let Some(pos) = SupplySwitchPos::parse(pos) {
-                        Ok(Some(Instruction::SwitchPos(pos)))
+                    if let Some(pos) = tokens.next() {
+                        no_more_args(&mut tokens)?;
+                        if let Some(pos) = SupplySwitchPos::parse(pos) {
+                            Ok(Some(Instruction::SetSwitchPos(pos)))
+                        } else {
+                            Err(b"Error: invalid argument\r\n")
+                        }
                     } else {
-                        Err(b"Error: invalid argument\r\n")
+                        Ok(Some(Instruction::PrintSwitchPos))
                     }
                 }
                 _ => Err(b"Error: no such instruction\r\n"),
@@ -74,10 +78,10 @@ pub struct Shell<'a, 'b, const BUF_SIZE: usize> {
 
 const HELP: &[&[u8]] = &[
     b"Available instructions:\r\n",
-    b"  help                    Print this help text\r\n",
-    b"  reset                   Reset (reboot) the device\r\n",
-    b"  rainbow-bounce          Play rainbow animation\r\n",
-    b"  switch-pos <5V|3V3|8V>  Set switch position\r\n",
+    b"  help                      Print this help text\r\n",
+    b"  reset                     Reset (reboot) the device\r\n",
+    b"  rainbow-bounce            Play rainbow animation\r\n",
+    b"  switch-pos [<5V|3V3|8V>]  Get/set switch position\r\n",
 ];
 
 impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
@@ -220,10 +224,17 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
                 bus::inject(task::leds::Message::PlayRainbowBounce).await;
                 Ok(())
             }
-            Instruction::SwitchPos(pos) => {
+            Instruction::SetSwitchPos(pos) => {
                 if let Some(nets) = crate::NETS.lock().await.as_mut() {
                     nets.supply_switch_pos = pos;
                     bus::inject(task::leds::Message::UpdateFromNets).await;
+                }
+                Ok(())
+            }
+            Instruction::PrintSwitchPos => {
+                if let Some(nets) = crate::NETS.lock().await.as_ref() {
+                    self.class.write_packet(nets.supply_switch_pos.label().as_bytes()).await?;
+                    self.class.write_packet(b"\r\n").await?;
                 }
                 Ok(())
             }

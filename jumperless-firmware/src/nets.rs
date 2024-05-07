@@ -240,13 +240,25 @@ pub enum SupplySwitchPos {
     _8V,
 }
 
+const SSP_3V3: &str = "3V3";
+const SSP_5V: &str = "5V";
+const SSP_8V: &str = "8V";
+
 impl SupplySwitchPos {
     pub fn parse(input: &str) -> Option<Self> {
         match input {
-            "3V3" => Some(Self::_3V3),
-            "5V" => Some(Self::_5V),
-            "8V" => Some(Self::_8V),
+            SSP_3V3 => Some(Self::_3V3),
+            SSP_5V => Some(Self::_5V),
+            SSP_8V => Some(Self::_8V),
             _ => None,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            SupplySwitchPos::_3V3 => SSP_3V3,
+            SupplySwitchPos::_5V => SSP_5V,
+            SupplySwitchPos::_8V => SSP_8V,
         }
     }
 }
