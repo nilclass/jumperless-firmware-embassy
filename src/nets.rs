@@ -15,7 +15,7 @@ pub struct Net {
     pub color: (u8, u8, u8),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct NetId(NonZeroU8);
 
 impl From<u8> for NetId {
@@ -264,6 +264,9 @@ impl SupplySwitchPos {
 
 struct ChipStatus([ChipStatusEntry; 12]);
 
+#[derive(Copy, Clone)]
+struct ChipPort(Chip, Dimension, u8);
+
 struct ChipStatusEntry {
     x: [Option<NetId>; 16],
     y: [Option<NetId>; 8],
@@ -277,6 +280,14 @@ impl ChipStatus {
         }
     }
 
+    fn get(&self, chip: Chip, dimension: Dimension, index: u8) -> Option<NetId> {
+        let entry = &self.0[chip as u8 as usize];
+        match dimension {
+            Dimension::X => entry.x[index as usize],
+            Dimension::Y => entry.y[index as usize],
+        }
+    }
+
     fn set(&mut self, chip: Chip, dimension: Dimension, index: u8, net: NetId) {
         let entry = &mut self.0[chip as u8 as usize];
         match dimension {
@@ -284,24 +295,101 @@ impl ChipStatus {
             Dimension::Y => entry.y[index as usize] = Some(net),
         }
     }
+
+    fn available(&self, port: ChipPort) -> bool {
+        self.get(port.0, port.1, port.2).is_none()
+    }
+
+    fn crosspoints(&self) -> CrosspointIterator {
+        CrosspointIterator {
+            cs: self,
+            i: 0,
+            x: 0,
+            y: 0,
+        }
+    }
 }
 
+pub struct CrosspointIterator<'a>{
+    cs: &'a ChipStatus,
+    i: usize,
+    x: usize,
+    y: usize,
+}
+
+impl<'a> Iterator for CrosspointIterator<'a> {
+    type Item = Crosspoint;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i == self.cs.0.len() {
+            return None
+        }
+        let chip_status = &self.cs.0[self.i];
+        let chip = Chip::from(self.i);
+        if let Some(x_net) = chip_status.x[self.x] {
+            if let Some(y_net) = chip_status.y[self.y] && x_net == y_net {
+                let (x, y) = (self.x as u8, self.y as u8);
+                self.advance_y();
+                Some(Crosspoint { chip, x, y })
+            } else {
+                self.advance_y();
+                self.next()
+            }
+        } else {
+            self.advance_x();
+            self.next()
+        }
+    }
+}
+
+impl<'a> CrosspointIterator<'a> {
+    fn advance_x(&mut self) {
+        if self.x == 15 {
+            self.i += 1;
+        } else {
+            self.x += 1;
+            self.y = 0;
+        }
+    }
+
+    fn advance_y(&mut self) {
+        if self.y == 7 {
+            self.advance_x();
+        } else {
+            self.y += 1;
+        }
+    }
+}
+
+pub struct Crosspoint {
+    pub chip: Chip,
+    pub x: u8,
+    pub y: u8,
+}
+
+#[derive(Copy, Clone)]
 enum Dimension {
     X,
     Y,
 }
 
 trait ChipLayout {
-    fn node_to_chip_port(&self, node: Node) -> (Chip, Dimension, u8);
+    fn node_to_chip_port(&self, node: Node) -> ChipPort;
+
+    fn lanes(&self, from_chip: Chip, from_dimension: Dimension, to_chip: Chip, to_dimension: Dimension) -> impl Iterator<Item = Lane>;
 }
+
+struct Lane(ChipPort, ChipPort);
 
 fn nets_to_chip_connections<L: ChipLayout>(layout: L, nets: &Nets, chip_status: &mut ChipStatus) {
     chip_status.clear();
 
+    let mut lanes = Vec::<Lane, 64>::new();
+
     // populate net id for all node ports
     for net in &nets.nets {
         for node in &net.nodes {
-            let (chip, dimension, index) = layout.node_to_chip_port(*node);
+            let ChipPort(chip, dimension, index) = layout.node_to_chip_port(*node);
             chip_status.set(chip, dimension, index, net.id);
         }
     }

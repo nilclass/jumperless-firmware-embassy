@@ -24,6 +24,9 @@ impl bus::BusMessage for Message {
 #[embassy_executor::task]
 pub async fn main(mut watchdog: Watchdog) {
     watchdog.start(Duration::from_millis(1500));
+    // FIXME: when `pause_on_debug` is set, the reset on infinite loops does
+    //   not function at all. If it is not set, probe-rs fails to show defmt
+    //   logs on every second attempt 🤷.
     watchdog.pause_on_debug(true);
     loop {
         Timer::after_millis(750).await;

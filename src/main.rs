@@ -4,10 +4,9 @@
 
 #![no_std]
 #![no_main]
-#![feature(async_fn_traits, async_closure)]
+#![feature(async_fn_traits, async_closure, let_chains)]
 
 use ch446q::Ch446q;
-use defmt::*;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
 use embassy_rp::bind_interrupts;
@@ -143,9 +142,11 @@ async fn main(spawner: Spawner) {
     // // connect x0 (-> AI) with y2 (-> [3])
     // ch446q.write(Packet::new(0, 2, true)).await;
 
+    defmt::info!("Spawning task: watchdog");
     spawner
         .spawn(task::watchdog::main(Watchdog::new(p.WATCHDOG)))
         .unwrap();
+    defmt::info!("Spawning task: leds");
     spawner.spawn(task::leds::main(leds)).unwrap();
 
     // Initialize USB driver
@@ -185,10 +186,10 @@ async fn main(spawner: Spawner) {
     let shell_future = async {
         loop {
             class.wait_connection().await;
-            info!("USB Serial Connected");
-            let mut shell: shell::Shell<'_, '_, 256> = shell::Shell::new(&mut class);
+            defmt::info!("USB Serial Connected");
+            let mut shell: shell::Shell<'_, '_, 62> = shell::Shell::new(&mut class);
             let _ = shell.run().await;
-            info!("USB Serial Disconnected");
+            defmt::info!("USB Serial Disconnected");
         }
     };
 

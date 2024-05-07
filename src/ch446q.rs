@@ -181,6 +181,26 @@ impl TryFrom<char> for Chip {
     }
 }
 
+impl From<usize> for Chip {
+    fn from(value: usize) -> Self {
+        match value {
+            0 => Chip::A,
+            1 => Chip::B,
+            2 => Chip::C,
+            3 => Chip::D,
+            4 => Chip::E,
+            5 => Chip::F,
+            6 => Chip::G,
+            7 => Chip::H,
+            8 => Chip::I,
+            9 => Chip::J,
+            10 => Chip::K,
+            11 => Chip::L,
+            _ => defmt::panic!("Invalid chip"),
+        }
+    }
+}
+
 pub struct Packet(u8);
 
 impl Packet {
