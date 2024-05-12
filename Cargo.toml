@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "jumperless-firmware",
     "line_buffer",
+    "crosspoint-matrix",
 ]
 
 [patch.crates-io]

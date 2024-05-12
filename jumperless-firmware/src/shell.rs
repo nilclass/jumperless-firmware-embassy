@@ -44,6 +44,9 @@ impl Instruction {
                         Ok(Some(Instruction::PrintSwitchPos))
                     }
                 }
+                // "chipdump" => {
+                //     no_more_args(&mut tokens)?;
+                // }
                 _ => Err(b"Error: no such instruction\r\n"),
             }
         } else {

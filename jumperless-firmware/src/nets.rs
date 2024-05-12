@@ -322,7 +322,7 @@ impl ChipStatus {
     }
 }
 
-pub struct CrosspointIterator<'a>{
+pub struct CrosspointIterator<'a> {
     cs: &'a ChipStatus,
     i: usize,
     x: usize,

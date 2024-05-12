@@ -214,3 +214,40 @@ impl From<Packet> for u32 {
         (val.0 as u32) << 24
     }
 }
+
+pub struct ChipDumpParser<'a> {
+    dump: &'a [u8],
+    x: u8,
+    y: u8,
+}
+
+impl<'a> ChipDumpParser<'a> {
+    pub fn new(dump: &'a [u8]) -> Self {
+        Self {
+            dump,
+            x: 0,
+            y: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for ChipDumpParser<'a> {
+    type Item = Packet;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.x == 16 {
+            return None
+        }
+
+        let byte = u32::from_str_radix(core::str::from_utf8(&self.dump[(self.x as usize)..(self.x as usize + 2)]).unwrap(), 16).unwrap();
+
+        let packet = Packet::new(self.x, self.y, ((byte >> self.y) | 1) == 1);
+        if self.y < 7 {
+            self.y += 1;
+        } else {
+            self.y = 0;
+            self.x += 1;
+        }
+        Some(packet)
+    }
+}
