@@ -13,6 +13,15 @@ pub enum Dimension {
     Y,
 }
 
+impl Dimension {
+    fn other(&self) -> Self {
+        match self {
+            Dimension::X => Dimension::Y,
+            Dimension::Y => Dimension::X,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct ChipId(u8);
 
@@ -89,16 +98,74 @@ impl ChipPort {
     }
 }
 
+/// A bitmap that can hold a boolean for every chip port.
+///
+/// Useful for various algorithms.
+struct ChipPortBitMap([u8; 36]);
+
+impl ChipPortBitMap {
+    pub fn empty() -> Self {
+        Self([0; 36])
+    }
+
+    /// Check if bit for given port address is set
+    pub fn get(&self, chip: ChipId, dimension: Dimension, index: u8) -> bool {
+        let address = Self::address(chip, dimension, index);
+        self.0[address / 8] >> (address % 8) == 1
+    }
+
+    /// Set the bit for given port address
+    pub fn set(&mut self, chip: ChipId, dimension: Dimension, index: u8) {
+        let address = Self::address(chip, dimension, index);
+        self.0[address / 8] |= 1 << (address % 8)
+    }
+
+    /// Check if all the bits that are set in `other` are also set in `self` (i.e. `self` is a superset of `other`)
+    pub fn contains(&self, other: &Self) -> bool {
+        for (i, byte) in self.0.iter().enumerate() {
+            if other.0[i] & byte != other.0[i] {
+                return false
+            }
+        }
+        true
+    }
+
+    pub fn print_diff(&self, other: &Self) {
+        println!("BEGIN DIFF");
+        for i in 0..12 {
+            let chip = ChipId::from_index(i);
+            for x in 0..16 {
+                let a = self.get(chip, Dimension::X, x);
+                let b = other.get(chip, Dimension::X, x);
+                if a && !b {
+                    println!("+{:?}", ChipPort(chip, Dimension::X, x));
+                } else if !a && b {
+                    println!("-{:?}", ChipPort(chip, Dimension::X, x));
+                }
+            }
+            for y in 0..8 {
+                let a = self.get(chip, Dimension::Y, y);
+                let b = other.get(chip, Dimension::Y, y);
+                if a && !b {
+                    println!("+{:?}", ChipPort(chip, Dimension::Y, y));
+                } else if !a && b {
+                    println!("-{:?}", ChipPort(chip, Dimension::Y, y));
+                }
+            }
+        }
+        println!("END DIFF");
+    }
+
+    fn address(chip: ChipId, dimension: Dimension, index: u8) -> usize {
+        chip.index() * 24 + if dimension == Dimension::X { 0 } else { 16 } + index as usize
+    }
+}
+
 #[derive(Default)]
 struct ChipStatusEntry {
     x: [Option<NetId>; 16],
     y: [Option<NetId>; 8],
 }
-
-// impl Display for ChipStatusEntry {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//     }
-// }
 
 impl ChipStatus {
     fn clear(&mut self) {
@@ -146,10 +213,145 @@ impl ChipStatus {
             y: 0,
         }
     }
+
+    fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(&self, net_id: NetId, layout: &layout::Layout<NODE_COUNT, LANE_COUNT>) {
+        println!("Check connectivity of net {:?}", net_id);
+        // contains every port that this net must contain (those that resolve to Nodes)
+        let mut required = ChipPortBitMap::empty();
+
+        let mut first = None;
+
+        for (i, chip_status) in self.0.iter().enumerate() {
+            let chip = ChipId::from_index(i);
+            for (x, value) in chip_status.x.iter().enumerate() {
+                if *value == Some(net_id) {
+                    if layout.port_to_node(ChipPort(chip, Dimension::X, x as u8)).is_some() {
+                        println!("REQUIRED: {:?}", ChipPort(chip, Dimension::X, x as u8));
+                        required.set(chip, Dimension::X, x as u8);
+                        if first.is_none() {
+                            first = Some(ChipPort(chip, Dimension::X, x as u8));
+                        }
+                    }
+                }
+            }
+            for (y, value) in chip_status.y.iter().enumerate() {
+                if *value == Some(net_id) {
+                    if layout.port_to_node(ChipPort(chip, Dimension::Y, y as u8)).is_some() {
+                        println!("REQUIRED: {:?}", ChipPort(chip, Dimension::Y, y as u8));
+                        required.set(chip, Dimension::Y, y as u8);
+                        if first.is_none() {
+                            first = Some(ChipPort(chip, Dimension::Y, y as u8));
+                        }
+                    }
+                }
+            }
+        }
+
+        let first = first.expect("net must be connected to at least one port");
+
+        println!("Starting with port: {:?}", first);
+
+        println!("Required bitmap: {:?}", required.0);
+
+        // keep track of nodes that were visited
+        let mut visited = ChipPortBitMap::empty();
+
+        self.visit_port(first, &mut visited, &mut |port, value| {
+            if value == Some(net_id) {
+                if let Some(dest) = layout.lane_destination(port) {
+                    return Visit::MarkAndFollow(dest)
+                }
+                Visit::Mark
+            } else {
+                Visit::Skip
+            }
+        });
+
+        println!("Visited bitmap: {:?}", visited.0);
+
+        if !visited.contains(&required) {
+
+            visited.print_diff(&required);
+
+            panic!("Not connected");
+        }
+    }
+
+    fn visit_port<F: FnMut(ChipPort, Option<NetId>) -> Visit>(&self, start: ChipPort, visited: &mut ChipPortBitMap, visit: &mut F) {
+        println!("Visit port {:?}", start);
+        visited.set(start.0, start.1, start.2);
+
+        // keep track if we "marked" any of the ports on the "other" edge
+        // (if so, we also visit the adjacent edge)
+        let mut marked_other = false;
+
+        // first visit all ports on the "other" edge
+        for port in self.edge_ports(start.edge().other()) {
+            println!("CHECK {:?}", port);
+            if visited.get(port.0, port.1, port.2) {
+                println!("VISITED");
+                // skip this one, we've already been here!
+                continue;
+            }
+
+            let net_id = self.get(port.0, port.1, port.2);
+            match visit(port, net_id) {
+                Visit::Skip => {},
+                Visit::Mark => {
+                    println!("MARK {:?}", port);
+                    marked_other = true;
+                    visited.set(port.0, port.1, port.2);
+                },
+                Visit::MarkAndFollow(follow) => {
+                    println!("MARK {:?}, FOLLOW {:?}", port, follow);
+                    marked_other = true;
+                    visited.set(port.0, port.1, port.2);
+                    self.visit_port(follow, visited, visit);
+                },
+            }
+        }
+
+        if marked_other {
+            for port in self.edge_ports(start.edge()) {
+                if visited.get(port.0, port.1, port.2) {
+                    // skip this one, we've already been here!
+                    continue;
+                }
+
+                let net_id = self.get(port.0, port.1, port.2);
+                match visit(port, net_id) {
+                    Visit::Skip => {},
+                    Visit::Mark => {
+                        println!("MARK {:?}", port);
+                        visited.set(port.0, port.1, port.2);
+                    },
+                    Visit::MarkAndFollow(follow) => {
+                        println!("MARK {:?}, FOLLOW {:?}", port, follow);
+                        visited.set(port.0, port.1, port.2);
+                        self.visit_port(follow, visited, visit);
+                    },
+                }
+            }
+        }
+    }
+
+    fn edge_ports(&self, edge: Edge) -> impl Iterator<Item = ChipPort> {
+        let range = match edge.1 {
+            Dimension::X => 0..16,
+            Dimension::Y => 0..8,
+        };
+        range.map(move |index| ChipPort(edge.0, edge.1, index))
+    }
 }
 
-impl From<ChipStatus> for Vec<Net> {
-    fn from(value: ChipStatus) -> Self {
+enum Visit {
+    Skip,
+    Mark,
+    MarkAndFollow(ChipPort),
+}
+
+impl From<&ChipStatus> for Vec<Net> {
+    fn from(value: &ChipStatus) -> Self {
         let mut nets: HashMap<NetId, Net> = HashMap::new();
         for (chip_index, chip) in value.0.iter().enumerate() {
             for (i, x) in chip.x.iter().enumerate() {
@@ -229,6 +431,8 @@ pub struct Crosspoint {
     pub y: u8,
 }
 
+/// A net is a collection of ChipPorts which are supposed to be
+/// interconnected.
 pub struct Net {
     id: NetId,
     ports: Vec<ChipPort>,
@@ -272,9 +476,17 @@ fn print_crosspoints(crosspoints: impl Iterator<Item = Crosspoint>) {
     }
 }
 
+/// Represents one of the sides (X/Y) of a specific chip.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 struct Edge(ChipId, Dimension);
 
+impl Edge {
+    fn other(&self) -> Self {
+        Self(self.0, self.1.other())
+    }
+}
+
+/// Represents a connection between two ChipPorts on different chips
 #[derive(Copy, Clone)]
 struct Lane(ChipPort, ChipPort);
 
@@ -282,11 +494,18 @@ impl Lane {
     fn touches(&self, edge: Edge) -> bool {
         self.0.edge() == edge || self.1.edge() == edge
     }
+
+    fn connects(&self, from: Edge, to: Edge) -> bool {
+        let (a, b) = (self.0.edge(), self.1.edge());
+        (a, b) == (from, to) || (a, b) == (to, from)
+    }
 }
 
 fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipStatus, lanes: &[Lane]) {
     // list of edges that need to be connected at the very end (these are for nets which are only on a single chip)
     let mut pending_edge_nets = vec![];
+    // list of pairs of edges that need a bounce in between
+    let mut pending_bounces = vec![];
     let mut lanes = lanes.to_vec(); // we remove lanes that are allocated
 
     for net in nets {
@@ -329,20 +548,30 @@ fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipSt
         if edges.len() == 1 { // single-chip net. Will be connected at the very end.
             pending_edge_nets.push((edges[0], net.id));
         } else if edges.len() == 2 {
-            let mut lane_index = None;
-            for (i, lane) in lanes.iter().enumerate() {
-                if lane.touches(edges[0]) && lane.touches(edges[1]) {
-                    lane_index = Some(i);
-                    break;
-                }
-            }
-            if let Some(i) = lane_index {
-                chip_status.set_lane(lanes.remove(i), net.id);
+            if let Some(lane) = take_lane(&mut lanes, |lane| lane.touches(edges[0]) && lane.touches(edges[1])) {
+                chip_status.set_lane(lane, net.id);
             } else {
-                panic!("No available lanes!");
+                pending_bounces.push((edges[0], edges[1], net.id));
             }
         } else {
-            panic!("More than 2 edges not yet implemented");
+            todo!("More than 2 edges");
+        }
+    }
+
+    // Produce missing lanes via bounces
+    for (edge_a, edge_b, net_id) in pending_bounces {
+        // first try to find an orthogonal edge on one of the chips that can connect us.
+        // if one is found, it can be hooked up to the target nodes via any other free lane at the very end.
+        let alt_edge_a = edge_a.other();
+        let alt_edge_b = edge_b.other();
+        if let Some(lane) = take_lane(&mut lanes, |lane| lane.connects(alt_edge_a, edge_b)) {
+            chip_status.set_lane(lane, net_id);
+            pending_edge_nets.push((edge_a, net_id));
+        } else if let Some(lane) = take_lane(&mut lanes, |lane| lane.connects(edge_a, alt_edge_b)) {
+            chip_status.set_lane(lane, net_id);
+            pending_edge_nets.push((edge_b, net_id));
+        } else {
+            todo!("Bounce from {:?} to {:?}", edge_a, edge_b);
         }
     }
 
@@ -359,8 +588,23 @@ fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipSt
         if let Some(i) = lane_index {
             chip_status.set_lane(lanes.remove(i), net_id);
         } else {
-            panic!("No available lanes!");
+            todo!("No available lane ports on edge {:?}", edge);
         }
+    }
+}
+
+fn take_lane<F: Fn(&Lane) -> bool>(lanes: &mut Vec<Lane>, predicate: F) -> Option<Lane> {
+    let mut index = None;
+    for (i, lane) in lanes.iter().enumerate() {
+        if predicate(lane) {
+            index = Some(i);
+            break;
+        }
+    }
+    if let Some(index) = index {
+        Some(lanes.remove(index))
+    } else {
+        None
     }
 }
 
@@ -374,24 +618,30 @@ mod tests {
     use layout::{Layout, NodeNet, Node};
 
     #[test]
-    fn it_works() {
+    /// Nets within this test are all either on the same chip, or span two chips with
+    /// a direct lane between them.
+    fn test_direct_routes() {
         let layout = Layout::v4();
         let mut chip_status = ChipStatus::default();
         let mut nets = [
+            // two nodes, on different chips
             NodeNet {
                 id: 1.into(),
                 nodes: vec![
+                    // Ix15
                     Node::Gnd,
+                    // Ay1
                     Node::Top2,
                 ],
             },
+            // single chip
             NodeNet {
                 id: 2.into(),
                 nodes: vec![
-                    Node::Supply5V,
-                    Node::Top3,
-                    Node::Top4,
-                    Node::Bottom5,
+                    // Ay6
+                    Node::Top7,
+                    // Ay7
+                    Node::Top8,
                 ],
             },
         ];
@@ -400,12 +650,78 @@ mod tests {
 
         print_crosspoints(chip_status.crosspoints());
 
-        let extracted: Vec<Net> = chip_status.into();
-        let mut converted: Vec<NodeNet> = extracted.into_iter().map(|net| NodeNet::from_net(&net, &layout)).collect();
-        normalize_nets(&mut converted);
-        assert_eq!(&nets[..], &converted[..]);
+        let extracted = node_nets_from_chip_status(&chip_status, &layout);
+        assert_eq!(&nets[..], &extracted[..]);
+        check_connectivity(&chip_status, &nets, &layout);
     }
 
+    #[test]
+    fn test_bounce() {
+        let layout = Layout::v4();
+        let mut chip_status = ChipStatus::default();
+        let mut nets = [
+            // Just two chips are involved here, but there is no direct lane to connect them
+            NodeNet {
+                id: 1.into(),
+                nodes: vec![
+                    // Lx8
+                    Node::Top1,
+                    // Ay1
+                    Node::Top2,
+                ],
+            },
+        ];
+        normalize_nets(&mut nets);
+        layout.nets_to_connections(&nets, &mut chip_status);
+        let extracted = node_nets_from_chip_status(&chip_status, &layout);
+        assert_eq!(&nets[..], &extracted[..]);
+        check_connectivity(&chip_status, &nets, &layout);
+    }
+
+    fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, nets: &[NodeNet], layout: &Layout<NODE_COUNT, LANE_COUNT>) {
+        for net in nets {
+            chip_status.check_connectivity(net.id, layout);
+        }
+    }
+
+    // #[test]
+    // fn test_multiple_chips() {
+    //     let layout = Layout::v4();
+    //     let mut chip_status = ChipStatus::default();
+    //     let mut nets = [
+    //         // two nodes on the same chip, two other nodes on other chips each
+    //         NodeNet {
+    //             id: 1.into(),
+    //             nodes: vec![
+    //                 // Jx14
+    //                 Node::Supply5V,
+    //                 // Ay2
+    //                 Node::Top3,
+    //                 // Ay3
+    //                 Node::Top4,
+    //                 // Ey4
+    //                 Node::Bottom5,
+    //             ],
+    //         },
+    //     ];
+    //     normalize_nets(&mut nets);
+    //     layout.nets_to_connections(&nets, &mut chip_status);
+    //     let extracted = node_nets_from_chip_status(&chip_status, &layout);
+    //     assert_eq!(&nets[..], &extracted[..]);
+    //     check_connectivity(&chip_status, &nets, &layout);
+    // }
+
+    fn node_nets_from_chip_status<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, layout: &Layout<NODE_COUNT, LANE_COUNT>) -> Vec<NodeNet> {
+        let nets: Vec<Net> = chip_status.into();
+        let mut converted: Vec<NodeNet> = nets.into_iter().map(|net| NodeNet::from_net(&net, layout)).collect();
+        normalize_nets(&mut converted);
+        converted
+    }
+
+    /// Normalizes a list of NodeNets to ease comparison
+    ///
+    /// A normalized netlist has all nets ordered by ID,
+    /// and all nodes within each net ordered by node number.
     fn normalize_nets(nets: &mut [NodeNet]) {
         nets.sort_by_key(|net| net.id.0);
         for net in nets {

@@ -43,6 +43,19 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
     pub fn port_to_node(&self, port: ChipPort) -> Option<Node> {
         self.nodes.iter().find(|NodeMapping(_, p)| *p == port).map(|NodeMapping(n, _)| n).copied()
     }
+
+    /// If the given port is part of a lane, returns the port on the other side of that lane
+    pub fn lane_destination(&self, port: ChipPort) -> Option<ChipPort> {
+        if let Some(Lane(a, b)) = self.lanes.iter().find(|l| l.0 == port || l.1 == port).copied() {
+            if a == port {
+                Some(b)
+            } else {
+                Some(a)
+            }
+        } else {
+            None
+        }
+    }
 }
 
 impl Layout<120, 168> {
