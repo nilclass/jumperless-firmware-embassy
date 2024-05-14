@@ -33,6 +33,14 @@ impl ChipId {
     pub fn from_index(index: usize) -> Self {
         Self(b'A' + index as u8)
     }
+
+    pub fn port_x(&self, x: u8) -> ChipPort {
+        ChipPort(*self, Dimension::X, x)
+    }
+
+    pub fn port_y(&self, y: u8) -> ChipPort {
+        ChipPort(*self, Dimension::Y, y)
+    }
 }
 
 impl Display for ChipId {
@@ -101,23 +109,34 @@ impl ChipPort {
 /// A bitmap that can hold a boolean for every chip port.
 ///
 /// Useful for various algorithms.
-struct ChipPortBitMap([u8; 36]);
+#[derive(Eq, PartialEq)]
+pub struct ChipPortBitMap([u8; 36]);
 
 impl ChipPortBitMap {
     pub fn empty() -> Self {
         Self([0; 36])
     }
 
+    pub fn full() -> Self {
+        Self([0xFF; 36])
+    }
+
     /// Check if bit for given port address is set
-    pub fn get(&self, chip: ChipId, dimension: Dimension, index: u8) -> bool {
-        let address = Self::address(chip, dimension, index);
-        self.0[address / 8] >> (address % 8) == 1
+    pub fn get(&self, port: ChipPort) -> bool {
+        let (i, j) = Self::address(port);
+        (self.0[i] >> j) & 1 == 1
     }
 
     /// Set the bit for given port address
-    pub fn set(&mut self, chip: ChipId, dimension: Dimension, index: u8) {
-        let address = Self::address(chip, dimension, index);
-        self.0[address / 8] |= 1 << (address % 8)
+    pub fn set(&mut self, port: ChipPort) {
+        let (i, j) = Self::address(port);
+        self.0[i] |= 1 << j
+    }
+
+    /// Clear the bit for given port address
+    pub fn clear(&mut self, port: ChipPort) {
+        let (i, j) = Self::address(port);
+        self.0[i] &= !(1 << j)
     }
 
     /// Check if all the bits that are set in `other` are also set in `self` (i.e. `self` is a superset of `other`)
@@ -135,29 +154,33 @@ impl ChipPortBitMap {
         for i in 0..12 {
             let chip = ChipId::from_index(i);
             for x in 0..16 {
-                let a = self.get(chip, Dimension::X, x);
-                let b = other.get(chip, Dimension::X, x);
+                let port = chip.port_x(x);
+                let a = self.get(port);
+                let b = other.get(port);
                 if a && !b {
-                    println!("+{:?}", ChipPort(chip, Dimension::X, x));
+                    println!("+{:?}", port);
                 } else if !a && b {
-                    println!("-{:?}", ChipPort(chip, Dimension::X, x));
+                    println!("-{:?}", port);
                 }
             }
             for y in 0..8 {
-                let a = self.get(chip, Dimension::Y, y);
-                let b = other.get(chip, Dimension::Y, y);
+                let port = chip.port_y(y);
+                let a = self.get(port);
+                let b = other.get(port);
                 if a && !b {
-                    println!("+{:?}", ChipPort(chip, Dimension::Y, y));
+                    println!("+{:?}", port);
                 } else if !a && b {
-                    println!("-{:?}", ChipPort(chip, Dimension::Y, y));
+                    println!("-{:?}", port);
                 }
             }
         }
         println!("END DIFF");
     }
 
-    fn address(chip: ChipId, dimension: Dimension, index: u8) -> usize {
-        chip.index() * 24 + if dimension == Dimension::X { 0 } else { 16 } + index as usize
+    fn address(port: ChipPort) -> (usize, usize) {
+        let ChipPort(chip, dimension, index) = port;
+        let bit_address = chip.index() * 24 + if dimension == Dimension::X { 0 } else { 16 } + index as usize;
+        (bit_address / 8, bit_address % 8)
     }
 }
 
@@ -225,22 +248,24 @@ impl ChipStatus {
             let chip = ChipId::from_index(i);
             for (x, value) in chip_status.x.iter().enumerate() {
                 if *value == Some(net_id) {
-                    if layout.port_to_node(ChipPort(chip, Dimension::X, x as u8)).is_some() {
-                        println!("REQUIRED: {:?}", ChipPort(chip, Dimension::X, x as u8));
-                        required.set(chip, Dimension::X, x as u8);
+                    let port = chip.port_x(x as u8);
+                    if layout.port_to_node(port).is_some() {
+                        println!("REQUIRED: {:?}", port);
+                        required.set(port);
                         if first.is_none() {
-                            first = Some(ChipPort(chip, Dimension::X, x as u8));
+                            first = Some(port);
                         }
                     }
                 }
             }
             for (y, value) in chip_status.y.iter().enumerate() {
                 if *value == Some(net_id) {
-                    if layout.port_to_node(ChipPort(chip, Dimension::Y, y as u8)).is_some() {
-                        println!("REQUIRED: {:?}", ChipPort(chip, Dimension::Y, y as u8));
-                        required.set(chip, Dimension::Y, y as u8);
+                    let port = chip.port_y(y as u8);
+                    if layout.port_to_node(port).is_some() {
+                        println!("REQUIRED: {:?}", port);
+                        required.set(port);
                         if first.is_none() {
-                            first = Some(ChipPort(chip, Dimension::Y, y as u8));
+                            first = Some(port);
                         }
                     }
                 }
@@ -279,7 +304,7 @@ impl ChipStatus {
 
     fn visit_port<F: FnMut(ChipPort, Option<NetId>) -> Visit>(&self, start: ChipPort, visited: &mut ChipPortBitMap, visit: &mut F) {
         println!("Visit port {:?}", start);
-        visited.set(start.0, start.1, start.2);
+        visited.set(start);
 
         // keep track if we "marked" any of the ports on the "other" edge
         // (if so, we also visit the adjacent edge)
@@ -288,7 +313,7 @@ impl ChipStatus {
         // first visit all ports on the "other" edge
         for port in self.edge_ports(start.edge().other()) {
             println!("CHECK {:?}", port);
-            if visited.get(port.0, port.1, port.2) {
+            if visited.get(port) {
                 println!("VISITED");
                 // skip this one, we've already been here!
                 continue;
@@ -300,12 +325,12 @@ impl ChipStatus {
                 Visit::Mark => {
                     println!("MARK {:?}", port);
                     marked_other = true;
-                    visited.set(port.0, port.1, port.2);
+                    visited.set(port);
                 },
                 Visit::MarkAndFollow(follow) => {
                     println!("MARK {:?}, FOLLOW {:?}", port, follow);
                     marked_other = true;
-                    visited.set(port.0, port.1, port.2);
+                    visited.set(port);
                     self.visit_port(follow, visited, visit);
                 },
             }
@@ -313,7 +338,7 @@ impl ChipStatus {
 
         if marked_other {
             for port in self.edge_ports(start.edge()) {
-                if visited.get(port.0, port.1, port.2) {
+                if visited.get(port) {
                     // skip this one, we've already been here!
                     continue;
                 }
@@ -323,11 +348,11 @@ impl ChipStatus {
                     Visit::Skip => {},
                     Visit::Mark => {
                         println!("MARK {:?}", port);
-                        visited.set(port.0, port.1, port.2);
+                        visited.set(port);
                     },
                     Visit::MarkAndFollow(follow) => {
                         println!("MARK {:?}, FOLLOW {:?}", port, follow);
-                        visited.set(port.0, port.1, port.2);
+                        visited.set(port);
                         self.visit_port(follow, visited, visit);
                     },
                 }
@@ -389,6 +414,7 @@ impl<'a> Iterator for CrosspointIterator<'a> {
         }
         let chip_status = &self.cs.0[self.i];
         let chip = ChipId::from_index(self.i);
+        println!("CP {},{},{}", self.i, self.x, self.y);
         if let Some(x_net) = chip_status.x[self.x] {
             if let Some(y_net) = chip_status.y[self.y] && x_net == y_net {
                 let (x, y) = (self.x as u8, self.y as u8);
@@ -409,6 +435,7 @@ impl<'a> CrosspointIterator<'a> {
     fn advance_x(&mut self) {
         if self.x == 15 {
             self.i += 1;
+            self.x = 0;
         } else {
             self.x += 1;
             self.y = 0;
@@ -424,6 +451,7 @@ impl<'a> CrosspointIterator<'a> {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Crosspoint {
     pub chip: ChipId,
     pub net_id: NetId,
@@ -622,6 +650,7 @@ mod tests {
     /// a direct lane between them.
     fn test_direct_routes() {
         let layout = Layout::v4();
+        layout.sanity_check();
         let mut chip_status = ChipStatus::default();
         let mut nets = [
             // two nodes, on different chips
@@ -710,6 +739,52 @@ mod tests {
     //     assert_eq!(&nets[..], &extracted[..]);
     //     check_connectivity(&chip_status, &nets, &layout);
     // }
+
+    #[test]
+    /// Connect all nodes on a chip to the same net
+    fn test_all_nodes_on_chip_single_net() {
+        let layout = Layout::v4();
+        let mut chip_status = ChipStatus::default();
+        let mut nets = [
+            NodeNet {
+                id: 1.into(),
+                nodes: vec![
+                    // Dy1
+                    Node::Top23,
+                    // Dy2
+                    Node::Top24,
+                    // Dy3
+                    Node::Top25,
+                    // Dy4
+                    Node::Top26,
+                    // Dy5
+                    Node::Top27,
+                    // Dy6
+                    Node::Top28,
+                    // Dy7
+                    Node::Top29,
+                ],
+            },
+        ];
+        normalize_nets(&mut nets);
+        layout.nets_to_connections(&nets, &mut chip_status);
+        let extracted = node_nets_from_chip_status(&chip_status, &layout);
+        assert_eq!(&nets[..], &extracted[..]);
+        check_connectivity(&chip_status, &nets, &layout);
+        let crosspoints: Vec<_> = chip_status.crosspoints().collect();
+        let chip = ChipId(b'D');
+        let net_id = 1.into();
+        let x = 0; // first available lane on edge `Dx`
+        assert_eq!(&crosspoints[..], &[
+            Crosspoint { chip, net_id, x, y: 1 },
+            Crosspoint { chip, net_id, x, y: 2 },
+            Crosspoint { chip, net_id, x, y: 3 },
+            Crosspoint { chip, net_id, x, y: 4 },
+            Crosspoint { chip, net_id, x, y: 5 },
+            Crosspoint { chip, net_id, x, y: 6 },
+            Crosspoint { chip, net_id, x, y: 7 },
+        ]);
+    }
 
     fn node_nets_from_chip_status<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, layout: &Layout<NODE_COUNT, LANE_COUNT>) -> Vec<NodeNet> {
         let nets: Vec<Net> = chip_status.into();

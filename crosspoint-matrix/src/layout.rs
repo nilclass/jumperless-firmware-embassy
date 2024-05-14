@@ -1,3 +1,5 @@
+use crate::ChipPortBitMap;
+
 use super::{ChipPort, Lane, ChipId, Dimension, Net, ChipStatus, NetId};
 
 pub struct NodeMapping(Node, ChipPort);
@@ -56,9 +58,46 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
             None
         }
     }
+
+    /// Verify that all possible ports are referenced by exactly one node mapping or exactly one lane.
+    ///
+    /// Prints problems to stdout and panics if a check has failed.
+    pub fn sanity_check(&self) {
+        let mut problems = vec![];
+        let mut used_ports = ChipPortBitMap::empty();
+        for NodeMapping(node, port) in &self.nodes {
+            if used_ports.get(*port) {
+                problems.push(format!("Port {port:?} used more than once (last use in node mapping {node:?})"));
+            }
+            used_ports.set(*port);
+        }
+        for Lane(a, b) in &self.lanes {
+            if used_ports.get(*a) {
+                problems.push(format!("Port {a:?} used more than once (last use in lane with port {b:?})"));
+            }
+            used_ports.set(*a);
+            if used_ports.get(*b) {
+                problems.push(format!("Port {b:?} used more than once (last use in lane with port {a:?})"));
+            }
+            used_ports.set(*b);
+        }
+        for problem in &problems {
+            println!("Found problem: {}", problem);
+        }
+        let expected = ChipPortBitMap::full();
+        if used_ports != expected {
+            println!("Not all ports have been used. Diff:");
+            expected.print_diff(&used_ports);
+
+            panic!("Sanity check failed");
+        }
+        if problems.len() > 0 {
+            panic!("All ports were used, but problems have been detected");
+        }
+    }
 }
 
-impl Layout<120, 168> {
+impl Layout<120, 84> {
     pub fn v4() -> Self {
         Self {
             nodes: [
@@ -201,8 +240,6 @@ impl Layout<120, 168> {
                 Lane(ChipPort(ChipId(b'A'), Dimension::X, 14), ChipPort(ChipId(b'H'), Dimension::X, 0)),
                 Lane(ChipPort(ChipId(b'A'), Dimension::X, 15), ChipPort(ChipId(b'H'), Dimension::X, 1)),
                 Lane(ChipPort(ChipId(b'A'), Dimension::Y, 0), ChipPort(ChipId(b'L'), Dimension::Y, 0)),
-                Lane(ChipPort(ChipId(b'B'), Dimension::X, 0), ChipPort(ChipId(b'A'), Dimension::X, 2)),
-                Lane(ChipPort(ChipId(b'B'), Dimension::X, 1), ChipPort(ChipId(b'A'), Dimension::X, 3)),
                 Lane(ChipPort(ChipId(b'B'), Dimension::X, 2), ChipPort(ChipId(b'I'), Dimension::Y, 1)),
                 Lane(ChipPort(ChipId(b'B'), Dimension::X, 3), ChipPort(ChipId(b'J'), Dimension::Y, 1)),
                 Lane(ChipPort(ChipId(b'B'), Dimension::X, 4), ChipPort(ChipId(b'C'), Dimension::X, 2)),
@@ -218,10 +255,6 @@ impl Layout<120, 168> {
                 Lane(ChipPort(ChipId(b'B'), Dimension::X, 14), ChipPort(ChipId(b'H'), Dimension::X, 2)),
                 Lane(ChipPort(ChipId(b'B'), Dimension::X, 15), ChipPort(ChipId(b'H'), Dimension::X, 3)),
                 Lane(ChipPort(ChipId(b'B'), Dimension::Y, 0), ChipPort(ChipId(b'L'), Dimension::Y, 1)),
-                Lane(ChipPort(ChipId(b'C'), Dimension::X, 0), ChipPort(ChipId(b'A'), Dimension::X, 4)),
-                Lane(ChipPort(ChipId(b'C'), Dimension::X, 1), ChipPort(ChipId(b'A'), Dimension::X, 5)),
-                Lane(ChipPort(ChipId(b'C'), Dimension::X, 2), ChipPort(ChipId(b'B'), Dimension::X, 4)),
-                Lane(ChipPort(ChipId(b'C'), Dimension::X, 3), ChipPort(ChipId(b'B'), Dimension::X, 5)),
                 Lane(ChipPort(ChipId(b'C'), Dimension::X, 4), ChipPort(ChipId(b'I'), Dimension::Y, 2)),
                 Lane(ChipPort(ChipId(b'C'), Dimension::X, 5), ChipPort(ChipId(b'J'), Dimension::Y, 2)),
                 Lane(ChipPort(ChipId(b'C'), Dimension::X, 6), ChipPort(ChipId(b'D'), Dimension::X, 4)),
@@ -235,12 +268,6 @@ impl Layout<120, 168> {
                 Lane(ChipPort(ChipId(b'C'), Dimension::X, 14), ChipPort(ChipId(b'H'), Dimension::X, 4)),
                 Lane(ChipPort(ChipId(b'C'), Dimension::X, 15), ChipPort(ChipId(b'H'), Dimension::X, 5)),
                 Lane(ChipPort(ChipId(b'C'), Dimension::Y, 0), ChipPort(ChipId(b'L'), Dimension::Y, 2)),
-                Lane(ChipPort(ChipId(b'D'), Dimension::X, 0), ChipPort(ChipId(b'A'), Dimension::X, 6)),
-                Lane(ChipPort(ChipId(b'D'), Dimension::X, 1), ChipPort(ChipId(b'A'), Dimension::X, 7)),
-                Lane(ChipPort(ChipId(b'D'), Dimension::X, 2), ChipPort(ChipId(b'B'), Dimension::X, 6)),
-                Lane(ChipPort(ChipId(b'D'), Dimension::X, 3), ChipPort(ChipId(b'B'), Dimension::X, 7)),
-                Lane(ChipPort(ChipId(b'D'), Dimension::X, 4), ChipPort(ChipId(b'C'), Dimension::X, 6)),
-                Lane(ChipPort(ChipId(b'D'), Dimension::X, 5), ChipPort(ChipId(b'C'), Dimension::X, 7)),
                 Lane(ChipPort(ChipId(b'D'), Dimension::X, 6), ChipPort(ChipId(b'I'), Dimension::Y, 3)),
                 Lane(ChipPort(ChipId(b'D'), Dimension::X, 7), ChipPort(ChipId(b'J'), Dimension::Y, 3)),
                 Lane(ChipPort(ChipId(b'D'), Dimension::X, 8), ChipPort(ChipId(b'E'), Dimension::X, 6)),
@@ -252,14 +279,7 @@ impl Layout<120, 168> {
                 Lane(ChipPort(ChipId(b'D'), Dimension::X, 14), ChipPort(ChipId(b'H'), Dimension::X, 6)),
                 Lane(ChipPort(ChipId(b'D'), Dimension::X, 15), ChipPort(ChipId(b'K'), Dimension::Y, 3)),
                 Lane(ChipPort(ChipId(b'D'), Dimension::Y, 0), ChipPort(ChipId(b'L'), Dimension::Y, 3)),
-                Lane(ChipPort(ChipId(b'E'), Dimension::X, 0), ChipPort(ChipId(b'A'), Dimension::X, 8)),
                 Lane(ChipPort(ChipId(b'E'), Dimension::X, 1), ChipPort(ChipId(b'K'), Dimension::Y, 4)),
-                Lane(ChipPort(ChipId(b'E'), Dimension::X, 2), ChipPort(ChipId(b'B'), Dimension::X, 8)),
-                Lane(ChipPort(ChipId(b'E'), Dimension::X, 3), ChipPort(ChipId(b'B'), Dimension::X, 9)),
-                Lane(ChipPort(ChipId(b'E'), Dimension::X, 4), ChipPort(ChipId(b'C'), Dimension::X, 8)),
-                Lane(ChipPort(ChipId(b'E'), Dimension::X, 5), ChipPort(ChipId(b'C'), Dimension::X, 9)),
-                Lane(ChipPort(ChipId(b'E'), Dimension::X, 6), ChipPort(ChipId(b'D'), Dimension::X, 8)),
-                Lane(ChipPort(ChipId(b'E'), Dimension::X, 7), ChipPort(ChipId(b'D'), Dimension::X, 9)),
                 Lane(ChipPort(ChipId(b'E'), Dimension::X, 8), ChipPort(ChipId(b'I'), Dimension::Y, 4)),
                 Lane(ChipPort(ChipId(b'E'), Dimension::X, 9), ChipPort(ChipId(b'J'), Dimension::Y, 4)),
                 Lane(ChipPort(ChipId(b'E'), Dimension::X, 10), ChipPort(ChipId(b'F'), Dimension::X, 8)),
@@ -269,16 +289,7 @@ impl Layout<120, 168> {
                 Lane(ChipPort(ChipId(b'E'), Dimension::X, 14), ChipPort(ChipId(b'H'), Dimension::X, 8)),
                 Lane(ChipPort(ChipId(b'E'), Dimension::X, 15), ChipPort(ChipId(b'H'), Dimension::X, 9)),
                 Lane(ChipPort(ChipId(b'E'), Dimension::Y, 0), ChipPort(ChipId(b'L'), Dimension::Y, 4)),
-                Lane(ChipPort(ChipId(b'F'), Dimension::X, 0), ChipPort(ChipId(b'A'), Dimension::X, 10)),
-                Lane(ChipPort(ChipId(b'F'), Dimension::X, 1), ChipPort(ChipId(b'A'), Dimension::X, 11)),
-                Lane(ChipPort(ChipId(b'F'), Dimension::X, 2), ChipPort(ChipId(b'B'), Dimension::X, 10)),
                 Lane(ChipPort(ChipId(b'F'), Dimension::X, 3), ChipPort(ChipId(b'K'), Dimension::Y, 5)),
-                Lane(ChipPort(ChipId(b'F'), Dimension::X, 4), ChipPort(ChipId(b'C'), Dimension::X, 10)),
-                Lane(ChipPort(ChipId(b'F'), Dimension::X, 5), ChipPort(ChipId(b'C'), Dimension::X, 11)),
-                Lane(ChipPort(ChipId(b'F'), Dimension::X, 6), ChipPort(ChipId(b'D'), Dimension::X, 10)),
-                Lane(ChipPort(ChipId(b'F'), Dimension::X, 7), ChipPort(ChipId(b'D'), Dimension::X, 11)),
-                Lane(ChipPort(ChipId(b'F'), Dimension::X, 8), ChipPort(ChipId(b'E'), Dimension::X, 10)),
-                Lane(ChipPort(ChipId(b'F'), Dimension::X, 9), ChipPort(ChipId(b'E'), Dimension::X, 11)),
                 Lane(ChipPort(ChipId(b'F'), Dimension::X, 10), ChipPort(ChipId(b'I'), Dimension::Y, 5)),
                 Lane(ChipPort(ChipId(b'F'), Dimension::X, 11), ChipPort(ChipId(b'J'), Dimension::Y, 5)),
                 Lane(ChipPort(ChipId(b'F'), Dimension::X, 12), ChipPort(ChipId(b'G'), Dimension::X, 10)),
@@ -286,72 +297,16 @@ impl Layout<120, 168> {
                 Lane(ChipPort(ChipId(b'F'), Dimension::X, 14), ChipPort(ChipId(b'H'), Dimension::X, 10)),
                 Lane(ChipPort(ChipId(b'F'), Dimension::X, 15), ChipPort(ChipId(b'H'), Dimension::X, 11)),
                 Lane(ChipPort(ChipId(b'F'), Dimension::Y, 0), ChipPort(ChipId(b'L'), Dimension::Y, 5)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 0), ChipPort(ChipId(b'A'), Dimension::X, 12)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 1), ChipPort(ChipId(b'A'), Dimension::X, 13)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 2), ChipPort(ChipId(b'B'), Dimension::X, 12)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 3), ChipPort(ChipId(b'B'), Dimension::X, 13)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 4), ChipPort(ChipId(b'C'), Dimension::X, 12)),
                 Lane(ChipPort(ChipId(b'G'), Dimension::X, 5), ChipPort(ChipId(b'K'), Dimension::Y, 6)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 6), ChipPort(ChipId(b'D'), Dimension::X, 12)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 7), ChipPort(ChipId(b'D'), Dimension::X, 13)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 8), ChipPort(ChipId(b'E'), Dimension::X, 12)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 9), ChipPort(ChipId(b'E'), Dimension::X, 13)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 10), ChipPort(ChipId(b'F'), Dimension::X, 12)),
-                Lane(ChipPort(ChipId(b'G'), Dimension::X, 11), ChipPort(ChipId(b'F'), Dimension::X, 13)),
                 Lane(ChipPort(ChipId(b'G'), Dimension::X, 12), ChipPort(ChipId(b'I'), Dimension::Y, 6)),
                 Lane(ChipPort(ChipId(b'G'), Dimension::X, 13), ChipPort(ChipId(b'J'), Dimension::Y, 6)),
                 Lane(ChipPort(ChipId(b'G'), Dimension::X, 14), ChipPort(ChipId(b'H'), Dimension::X, 12)),
                 Lane(ChipPort(ChipId(b'G'), Dimension::X, 15), ChipPort(ChipId(b'H'), Dimension::X, 13)),
                 Lane(ChipPort(ChipId(b'G'), Dimension::Y, 0), ChipPort(ChipId(b'L'), Dimension::Y, 6)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 0), ChipPort(ChipId(b'A'), Dimension::X, 14)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 1), ChipPort(ChipId(b'A'), Dimension::X, 15)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 2), ChipPort(ChipId(b'B'), Dimension::X, 14)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 3), ChipPort(ChipId(b'B'), Dimension::X, 15)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 4), ChipPort(ChipId(b'C'), Dimension::X, 14)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 5), ChipPort(ChipId(b'C'), Dimension::X, 15)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 6), ChipPort(ChipId(b'D'), Dimension::X, 14)),
                 Lane(ChipPort(ChipId(b'H'), Dimension::X, 7), ChipPort(ChipId(b'K'), Dimension::Y, 7)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 8), ChipPort(ChipId(b'E'), Dimension::X, 14)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 9), ChipPort(ChipId(b'E'), Dimension::X, 15)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 10), ChipPort(ChipId(b'F'), Dimension::X, 14)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 11), ChipPort(ChipId(b'F'), Dimension::X, 15)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 12), ChipPort(ChipId(b'G'), Dimension::X, 14)),
-                Lane(ChipPort(ChipId(b'H'), Dimension::X, 13), ChipPort(ChipId(b'G'), Dimension::X, 15)),
                 Lane(ChipPort(ChipId(b'H'), Dimension::X, 14), ChipPort(ChipId(b'I'), Dimension::Y, 7)),
                 Lane(ChipPort(ChipId(b'H'), Dimension::X, 15), ChipPort(ChipId(b'J'), Dimension::Y, 7)),
                 Lane(ChipPort(ChipId(b'H'), Dimension::Y, 0), ChipPort(ChipId(b'L'), Dimension::Y, 7)),
-                Lane(ChipPort(ChipId(b'I'), Dimension::Y, 0), ChipPort(ChipId(b'A'), Dimension::X, 0)),
-                Lane(ChipPort(ChipId(b'I'), Dimension::Y, 1), ChipPort(ChipId(b'B'), Dimension::X, 2)),
-                Lane(ChipPort(ChipId(b'I'), Dimension::Y, 2), ChipPort(ChipId(b'C'), Dimension::X, 4)),
-                Lane(ChipPort(ChipId(b'I'), Dimension::Y, 3), ChipPort(ChipId(b'D'), Dimension::X, 6)),
-                Lane(ChipPort(ChipId(b'I'), Dimension::Y, 4), ChipPort(ChipId(b'E'), Dimension::X, 8)),
-                Lane(ChipPort(ChipId(b'I'), Dimension::Y, 5), ChipPort(ChipId(b'F'), Dimension::X, 10)),
-                Lane(ChipPort(ChipId(b'I'), Dimension::Y, 6), ChipPort(ChipId(b'G'), Dimension::X, 12)),
-                Lane(ChipPort(ChipId(b'I'), Dimension::Y, 7), ChipPort(ChipId(b'H'), Dimension::X, 14)),
-                Lane(ChipPort(ChipId(b'J'), Dimension::Y, 0), ChipPort(ChipId(b'A'), Dimension::X, 1)),
-                Lane(ChipPort(ChipId(b'J'), Dimension::Y, 1), ChipPort(ChipId(b'B'), Dimension::X, 3)),
-                Lane(ChipPort(ChipId(b'J'), Dimension::Y, 2), ChipPort(ChipId(b'C'), Dimension::X, 5)),
-                Lane(ChipPort(ChipId(b'J'), Dimension::Y, 3), ChipPort(ChipId(b'D'), Dimension::X, 7)),
-                Lane(ChipPort(ChipId(b'J'), Dimension::Y, 4), ChipPort(ChipId(b'E'), Dimension::X, 9)),
-                Lane(ChipPort(ChipId(b'J'), Dimension::Y, 5), ChipPort(ChipId(b'F'), Dimension::X, 11)),
-                Lane(ChipPort(ChipId(b'J'), Dimension::Y, 6), ChipPort(ChipId(b'G'), Dimension::X, 13)),
-                Lane(ChipPort(ChipId(b'J'), Dimension::Y, 7), ChipPort(ChipId(b'H'), Dimension::X, 15)),
-                Lane(ChipPort(ChipId(b'K'), Dimension::Y, 0), ChipPort(ChipId(b'A'), Dimension::X, 9)),
-                Lane(ChipPort(ChipId(b'K'), Dimension::Y, 1), ChipPort(ChipId(b'B'), Dimension::X, 11)),
-                Lane(ChipPort(ChipId(b'K'), Dimension::Y, 2), ChipPort(ChipId(b'C'), Dimension::X, 13)),
-                Lane(ChipPort(ChipId(b'K'), Dimension::Y, 3), ChipPort(ChipId(b'D'), Dimension::X, 15)),
-                Lane(ChipPort(ChipId(b'K'), Dimension::Y, 4), ChipPort(ChipId(b'E'), Dimension::X, 1)),
-                Lane(ChipPort(ChipId(b'K'), Dimension::Y, 5), ChipPort(ChipId(b'F'), Dimension::X, 3)),
-                Lane(ChipPort(ChipId(b'K'), Dimension::Y, 6), ChipPort(ChipId(b'G'), Dimension::X, 5)),
-                Lane(ChipPort(ChipId(b'K'), Dimension::Y, 7), ChipPort(ChipId(b'H'), Dimension::X, 7)),
-                Lane(ChipPort(ChipId(b'L'), Dimension::Y, 0), ChipPort(ChipId(b'A'), Dimension::Y, 0)),
-                Lane(ChipPort(ChipId(b'L'), Dimension::Y, 1), ChipPort(ChipId(b'B'), Dimension::Y, 0)),
-                Lane(ChipPort(ChipId(b'L'), Dimension::Y, 2), ChipPort(ChipId(b'C'), Dimension::Y, 0)),
-                Lane(ChipPort(ChipId(b'L'), Dimension::Y, 3), ChipPort(ChipId(b'D'), Dimension::Y, 0)),
-                Lane(ChipPort(ChipId(b'L'), Dimension::Y, 4), ChipPort(ChipId(b'E'), Dimension::Y, 0)),
-                Lane(ChipPort(ChipId(b'L'), Dimension::Y, 5), ChipPort(ChipId(b'F'), Dimension::Y, 0)),
-                Lane(ChipPort(ChipId(b'L'), Dimension::Y, 6), ChipPort(ChipId(b'G'), Dimension::Y, 0)),
-                Lane(ChipPort(ChipId(b'L'), Dimension::Y, 7), ChipPort(ChipId(b'H'), Dimension::Y, 0)),
             ],
         }
     }
