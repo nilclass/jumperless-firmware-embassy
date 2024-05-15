@@ -89,7 +89,8 @@ impl ChipStatus {
     /// Then it picks the first node, and does a depth-first walk following any crosspoint connections and lanes that it encounters, keeping track of all the
     /// chip ports that it already visited (so it doesn't get stuck in loops).
     ///
-    /// Once the walk finds no more paths to follow, we compare the set of ports that were visited by the walk with the set of required collected earlier
+    /// Once the walk finds no more paths to follow, we compare the set of ports that were visited by the walk with the set of required ones collected earlier.
+    /// If all of the required ports have been visited, then all of them must be connected by at least one path.
     #[allow(unused)]
     pub(crate) fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(&self, net_id: NetId, layout: &layout::Layout<NODE_COUNT, LANE_COUNT>) {
         println!("Check connectivity of net {:?}", net_id);
