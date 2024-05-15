@@ -14,7 +14,7 @@ pub enum Dimension {
 }
 
 impl Dimension {
-    fn other(&self) -> Self {
+    fn orthogonal(&self) -> Self {
         match self {
             Dimension::X => Dimension::Y,
             Dimension::Y => Dimension::X,
@@ -54,36 +54,6 @@ impl std::fmt::Debug for ChipId {
         write!(f, "ChipId({})", core::str::from_utf8(&[self.0]).unwrap())
     }
 }
-
-// #[derive(Copy, Clone)]
-// struct Port(ChipId, Dimension, usize);
-
-trait CrosspointSwitch {
-    fn set(&mut self, x: usize, y: usize, closed: bool);
-}
-
-// #[derive(Copy, Clone)]
-// struct Lane<ChipId: Copy>(Port<ChipId>, Port<ChipId>);
-
-// trait CrosspointMatrix {
-//     type ChipId: Copy;
-//     type CrosspointSwitch: CrosspointSwitch;
-
-//     /// Reset all chips
-//     fn reset(&mut self);
-
-//     /// Iterate over all lanes that connect the given chip edges
-//     fn lanes(&self, from: (Self::ChipId, Dimension), to: (Self::ChipId, Dimension)) -> impl Iterator<Item = Lane<Self::ChipId>>;
-
-//     fn select(&mut self, chip: Self::ChipId) -> &mut Self::CrosspointSwitch;
-// }
-
-// trait NetsToCrosspoints {
-//     type NodeId: Copy;
-//     type SwitchId;
-
-//     fn route_net(&mut self, net: &[Self::NodeId]) -> impl Iterator<Item = Self::SwitchId>;
-// }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct NetId(NonZeroU8);
@@ -306,12 +276,12 @@ impl ChipStatus {
         println!("Visit port {:?}", start);
         visited.set(start);
 
-        // keep track if we "marked" any of the ports on the "other" edge
+        // keep track if we "marked" any of the ports on the orthogonal edge
         // (if so, we also visit the adjacent edge)
-        let mut marked_other = false;
+        let mut marked_orthogonal = false;
 
         // first visit all ports on the "other" edge
-        for port in self.edge_ports(start.edge().other()) {
+        for port in start.edge().orthogonal().ports() {
             println!("CHECK {:?}", port);
             if visited.get(port) {
                 println!("VISITED");
@@ -324,20 +294,20 @@ impl ChipStatus {
                 Visit::Skip => {},
                 Visit::Mark => {
                     println!("MARK {:?}", port);
-                    marked_other = true;
+                    marked_orthogonal = true;
                     visited.set(port);
                 },
                 Visit::MarkAndFollow(follow) => {
                     println!("MARK {:?}, FOLLOW {:?}", port, follow);
-                    marked_other = true;
+                    marked_orthogonal = true;
                     visited.set(port);
                     self.visit_port(follow, visited, visit);
                 },
             }
         }
 
-        if marked_other {
-            for port in self.edge_ports(start.edge()) {
+        if marked_orthogonal {
+            for port in start.edge().ports() {
                 if visited.get(port) {
                     // skip this one, we've already been here!
                     continue;
@@ -358,14 +328,6 @@ impl ChipStatus {
                 }
             }
         }
-    }
-
-    fn edge_ports(&self, edge: Edge) -> impl Iterator<Item = ChipPort> {
-        let range = match edge.1 {
-            Dimension::X => 0..16,
-            Dimension::Y => 0..8,
-        };
-        range.map(move |index| ChipPort(edge.0, edge.1, index))
     }
 }
 
@@ -509,8 +471,17 @@ fn print_crosspoints(crosspoints: impl Iterator<Item = Crosspoint>) {
 struct Edge(ChipId, Dimension);
 
 impl Edge {
-    fn other(&self) -> Self {
-        Self(self.0, self.1.other())
+    fn orthogonal(&self) -> Self {
+        Self(self.0, self.1.orthogonal())
+    }
+
+    fn ports(&self) -> impl Iterator<Item = ChipPort> {
+        let Edge(chip, dimension) = *self;
+        let range = match dimension {
+            Dimension::X => 0..16,
+            Dimension::Y => 0..8,
+        };
+        range.map(move |index| ChipPort(chip, dimension, index))
     }
 }
 
@@ -577,8 +548,10 @@ fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipSt
             pending_edge_nets.push((edges[0], net.id));
         } else if edges.len() == 2 {
             if let Some(lane) = take_lane(&mut lanes, |lane| lane.touches(edges[0]) && lane.touches(edges[1])) {
+                // connect directly, with a lane
                 chip_status.set_lane(lane, net.id);
             } else {
+                // connect later, bounced through another chip
                 pending_bounces.push((edges[0], edges[1], net.id));
             }
         } else {
@@ -590,15 +563,15 @@ fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipSt
     for (edge_a, edge_b, net_id) in pending_bounces {
         // first try to find an orthogonal edge on one of the chips that can connect us.
         // if one is found, it can be hooked up to the target nodes via any other free lane at the very end.
-        let alt_edge_a = edge_a.other();
-        let alt_edge_b = edge_b.other();
+        let alt_edge_a = edge_a.orthogonal();
+        let alt_edge_b = edge_b.orthogonal();
         if let Some(lane) = take_lane(&mut lanes, |lane| lane.connects(alt_edge_a, edge_b)) {
             chip_status.set_lane(lane, net_id);
             pending_edge_nets.push((edge_a, net_id));
         } else if let Some(lane) = take_lane(&mut lanes, |lane| lane.connects(edge_a, alt_edge_b)) {
             chip_status.set_lane(lane, net_id);
             pending_edge_nets.push((edge_b, net_id));
-        } else {
+        } else { // bounce via orthagonal edge not possible. Try to find a path via another chip.
             todo!("Bounce from {:?} to {:?}", edge_a, edge_b);
         }
     }
@@ -621,6 +594,7 @@ fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipSt
     }
 }
 
+/// Take (remove) the first lane from the given list of lanes that matches the predicate.
 fn take_lane<F: Fn(&Lane) -> bool>(lanes: &mut Vec<Lane>, predicate: F) -> Option<Lane> {
     let mut index = None;
     for (i, lane) in lanes.iter().enumerate() {
@@ -636,10 +610,6 @@ fn take_lane<F: Fn(&Lane) -> bool>(lanes: &mut Vec<Lane>, predicate: F) -> Optio
     }
 }
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -649,10 +619,10 @@ mod tests {
     /// Nets within this test are all either on the same chip, or span two chips with
     /// a direct lane between them.
     fn test_direct_routes() {
-        let layout = Layout::v4();
-        layout.sanity_check();
-        let mut chip_status = ChipStatus::default();
-        let mut nets = [
+        let a = ChipId(b'A');
+        let i = ChipId(b'I');
+
+        test_netlist(&mut [
             // two nodes, on different chips
             NodeNet {
                 id: 1.into(),
@@ -673,23 +643,23 @@ mod tests {
                     Node::Top8,
                 ],
             },
-        ];
-        normalize_nets(&mut nets);
-        layout.nets_to_connections(&nets, &mut chip_status);
-
-        print_crosspoints(chip_status.crosspoints());
-
-        let extracted = node_nets_from_chip_status(&chip_status, &layout);
-        assert_eq!(&nets[..], &extracted[..]);
-        check_connectivity(&chip_status, &nets, &layout);
+        ], &[
+            Crosspoint { chip: a, x: 0, y: 1, net_id: 1.into() }, // hook up Ay1 to lane leading to Iy0
+            Crosspoint { chip: a, x: 1, y: 6, net_id: 2.into() }, // hook up first available lane (Ax1) to node at Ay6
+            Crosspoint { chip: a, x: 1, y: 7, net_id: 2.into() }, // hook the same line up to node at Ay7
+            Crosspoint { chip: i, x: 15, y: 0, net_id: 1.into() }, // finally connect GND node (Ix15) to lane going to chip A
+        ]);
     }
 
     #[test]
-    fn test_bounce() {
-        let layout = Layout::v4();
-        let mut chip_status = ChipStatus::default();
-        let mut nets = [
-            // Just two chips are involved here, but there is no direct lane to connect them
+    fn test_bounce_orthogonal() {
+        let a = ChipId(b'A');
+        let l = ChipId(b'L');
+        let net_id = 1.into();
+
+        test_netlist(&mut [
+            // Just two chips are involved here, but there is no direct lane to connect them.
+            // There is a connection between chip A and chip L though, using Ay0.
             NodeNet {
                 id: 1.into(),
                 nodes: vec![
@@ -699,19 +669,52 @@ mod tests {
                     Node::Top2,
                 ],
             },
-        ];
-        normalize_nets(&mut nets);
-        layout.nets_to_connections(&nets, &mut chip_status);
-        let extracted = node_nets_from_chip_status(&chip_status, &layout);
-        assert_eq!(&nets[..], &extracted[..]);
-        check_connectivity(&chip_status, &nets, &layout);
+        ], &[
+            Crosspoint { chip: a, x: 0, y: 0, net_id }, // connect first free lane on Ax with lane to Ly
+            Crosspoint { chip: a, x: 0, y: 1, net_id }, // connect the same lane on Ax with node at Ay1 (Top2)
+            Crosspoint { chip: l, x: 8, y: 0, net_id }, // connect the L side of the lane with node at Lx8 (Top1)
+        ]);
     }
 
-    fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, nets: &[NodeNet], layout: &Layout<NODE_COUNT, LANE_COUNT>) {
-        for net in nets {
-            chip_status.check_connectivity(net.id, layout);
-        }
+    #[test]
+    /// Connect all nodes on a chip to the same net
+    fn test_all_nodes_on_chip_single_net() {
+        let chip = ChipId(b'D');
+        let net_id = 1.into();
+        let x = 0; // first available lane on edge `Dx`
+
+        test_netlist(&mut [
+            NodeNet {
+                id: 1.into(),
+                nodes: vec![
+                    // Dy1
+                    Node::Top23,
+                    // Dy2
+                    Node::Top24,
+                    // Dy3
+                    Node::Top25,
+                    // Dy4
+                    Node::Top26,
+                    // Dy5
+                    Node::Top27,
+                    // Dy6
+                    Node::Top28,
+                    // Dy7
+                    Node::Top29,
+                ],
+            },
+        ], &[
+            Crosspoint { chip, net_id, x, y: 1 },
+            Crosspoint { chip, net_id, x, y: 2 },
+            Crosspoint { chip, net_id, x, y: 3 },
+            Crosspoint { chip, net_id, x, y: 4 },
+            Crosspoint { chip, net_id, x, y: 5 },
+            Crosspoint { chip, net_id, x, y: 6 },
+            Crosspoint { chip, net_id, x, y: 7 },
+        ]);
     }
+
+    /// THIS ONE DOESN'T WORK YET:
 
     // #[test]
     // fn test_multiple_chips() {
@@ -740,50 +743,28 @@ mod tests {
     //     check_connectivity(&chip_status, &nets, &layout);
     // }
 
-    #[test]
-    /// Connect all nodes on a chip to the same net
-    fn test_all_nodes_on_chip_single_net() {
+    fn test_netlist(nets: &mut [NodeNet], expected_crosspoints: &[Crosspoint]) {
+        // normalize nets, to make it comparisons easier
+        normalize_nets(nets);
+
         let layout = Layout::v4();
+        layout.sanity_check();
+
+        // create chip status from netlist
         let mut chip_status = ChipStatus::default();
-        let mut nets = [
-            NodeNet {
-                id: 1.into(),
-                nodes: vec![
-                    // Dy1
-                    Node::Top23,
-                    // Dy2
-                    Node::Top24,
-                    // Dy3
-                    Node::Top25,
-                    // Dy4
-                    Node::Top26,
-                    // Dy5
-                    Node::Top27,
-                    // Dy6
-                    Node::Top28,
-                    // Dy7
-                    Node::Top29,
-                ],
-            },
-        ];
-        normalize_nets(&mut nets);
-        layout.nets_to_connections(&nets, &mut chip_status);
-        let extracted = node_nets_from_chip_status(&chip_status, &layout);
-        assert_eq!(&nets[..], &extracted[..]);
-        check_connectivity(&chip_status, &nets, &layout);
+        layout.nets_to_connections(nets, &mut chip_status);
+
+        // reconstruct netlist from ChipStatus, and compare it with the input
+        let extracted_nets = node_nets_from_chip_status(&chip_status, &layout);
+        assert_eq!(nets, &extracted_nets[..]);
+
+        // verify that the ChipStatus is sound given the the list of nets.
+        // this ensures that each net is fully connected (no disjoint islands)
+        check_connectivity(&chip_status, nets, &layout);
+
+        // finally verify that the netlist lead to the expected crosspoint connections
         let crosspoints: Vec<_> = chip_status.crosspoints().collect();
-        let chip = ChipId(b'D');
-        let net_id = 1.into();
-        let x = 0; // first available lane on edge `Dx`
-        assert_eq!(&crosspoints[..], &[
-            Crosspoint { chip, net_id, x, y: 1 },
-            Crosspoint { chip, net_id, x, y: 2 },
-            Crosspoint { chip, net_id, x, y: 3 },
-            Crosspoint { chip, net_id, x, y: 4 },
-            Crosspoint { chip, net_id, x, y: 5 },
-            Crosspoint { chip, net_id, x, y: 6 },
-            Crosspoint { chip, net_id, x, y: 7 },
-        ]);
+        assert_eq!(&crosspoints[..], expected_crosspoints);
     }
 
     fn node_nets_from_chip_status<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, layout: &Layout<NODE_COUNT, LANE_COUNT>) -> Vec<NodeNet> {
@@ -791,6 +772,12 @@ mod tests {
         let mut converted: Vec<NodeNet> = nets.into_iter().map(|net| NodeNet::from_net(&net, layout)).collect();
         normalize_nets(&mut converted);
         converted
+    }
+
+    fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, nets: &[NodeNet], layout: &Layout<NODE_COUNT, LANE_COUNT>) {
+        for net in nets {
+            chip_status.check_connectivity(net.id, layout);
+        }
     }
 
     /// Normalizes a list of NodeNets to ease comparison
