@@ -1,6 +1,4 @@
-use crate::ChipPortBitMap;
-
-use super::{ChipPort, Lane, ChipId, Dimension, Net, ChipStatus, NetId};
+use crate::{ChipPort, Lane, ChipId, Dimension, Net, ChipStatus, NetId, util::ChipPortBitMap};
 
 pub struct NodeMapping(Node, ChipPort);
 
