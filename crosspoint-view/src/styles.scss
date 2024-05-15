@@ -1,0 +1,28 @@
+
+.Crosspoints {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.Crosspoint {
+  border: solid 1px #333;
+  border-radius: 8px;
+  color: #ddd;
+  background: #333;
+  padding: 8px 8px 12px 8px;
+
+  h1 {
+    text-align: center;
+  }
+
+  th {
+    font-size: 12px;
+  }
+
+  td, th {
+    text-align: center;
+  }
+}
+
