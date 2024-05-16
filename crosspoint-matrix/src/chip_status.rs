@@ -33,41 +33,41 @@ impl ChipStatus {
     }
 
     /// Retrieve net id assigned to given port
-    pub fn get(&self, chip: ChipId, dimension: Dimension, index: u8) -> Option<NetId> {
-        let entry = &self.0[chip.index()];
-        match dimension {
-            Dimension::X => entry.x[index as usize],
-            Dimension::Y => entry.y[index as usize],
+    pub fn get(&self, port: ChipPort) -> Option<NetId> {
+        let entry = &self.0[port.0.index()];
+        match port.1 {
+            Dimension::X => entry.x[port.2 as usize],
+            Dimension::Y => entry.y[port.2 as usize],
         }
     }
 
     /// Assign net id to given port
     ///
     /// Panics if the port is already assigned to a different net.
-    pub fn set(&mut self, chip: ChipId, dimension: Dimension, index: u8, net: NetId) {
-        if let Some(existing) = self.get(chip, dimension, index) {
-            panic!("Already set: {:?} {:?} {}, have {:?}, want {:?}", chip, dimension, index, existing, net);
+    pub fn set(&mut self, port: ChipPort, net: NetId) {
+        if let Some(existing) = self.get(port) {
+            panic!("Already set: {:?}, have {:?}, want {:?}", port, existing, net);
         }
 
-        let entry = &mut self.0[chip.index()];
-        match dimension {
-            Dimension::X => entry.x[index as usize] = Some(net),
-            Dimension::Y => entry.y[index as usize] = Some(net),
+        let entry = &mut self.0[port.0.index()];
+        match port.1 {
+            Dimension::X => entry.x[port.2 as usize] = Some(net),
+            Dimension::Y => entry.y[port.2 as usize] = Some(net),
         }
-        println!("SET {} {:?}{} to {:?}", chip, dimension, index, net)
+        println!("SET {:?} to {:?}", port, net)
     }
 
     /// Assign given net id to both ends of given lane
     ///
     /// Panics if one of the ports is already assigned to a different net.
     pub fn set_lane(&mut self, lane: Lane, net: NetId) {
-        self.set(lane.0.0, lane.0.1, lane.0.2, net);
-        self.set(lane.1.0, lane.1.1, lane.1.2, net);
+        self.set(lane.0, net);
+        self.set(lane.1, net);
     }
 
     /// Is the given port available? (i.e. no net assigned to it?)
     pub fn available(&self, port: ChipPort) -> bool {
-        self.get(port.0, port.1, port.2).is_none()
+        self.get(port).is_none()
     }
 
     /// Iterate over all the crosspoint which must be set (switch closed)
@@ -174,7 +174,7 @@ impl ChipStatus {
                 continue;
             }
 
-            let net_id = self.get(port.0, port.1, port.2);
+            let net_id = self.get(port);
             match visit(port, net_id) {
                 Visit::Skip => {},
                 Visit::Mark => {
@@ -198,7 +198,7 @@ impl ChipStatus {
                     continue;
                 }
 
-                let net_id = self.get(port.0, port.1, port.2);
+                let net_id = self.get(port);
                 match visit(port, net_id) {
                     Visit::Skip => {},
                     Visit::Mark => {

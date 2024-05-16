@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 /// Turn given list of `nets` into connections. The connections are made by modifying the given `chip_status` (which is expected to be empty to begin with).
 ///
-/// The given `lanes` represent
+/// The given `lanes` are specific to the board, and tell the algorithm how to the chips are interconnected.
 pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipStatus, lanes: &[Lane]) {
     // list of edges that need to be connected at the very end (these are for nets which are only on a single chip)
     let mut pending_edge_nets = vec![];
@@ -22,7 +22,9 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
     // lanes that are still available.
     let mut lanes = lanes.to_vec();
 
+    // For now, just go net-by-net, in the order they are given. Later on this could become more clever and route more complex nets first.
     for net in nets {
+        // group the ports by chip
         let mut by_chip: HashMap<ChipId, Vec<ChipPort>> = HashMap::new();
         for port in &net.ports {
             by_chip.entry(port.0).or_default().push(*port);
@@ -32,10 +34,12 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
 
         let mut edges = vec![];
 
+        // go through each port by chip, and detect which edges need to be connected
         for (chip, ports) in by_chip {
             let (mut x_used, mut y_used) = (false, false);
             for port in ports {
-                chip_status.set(port.0, port.1, port.2, net.id);
+                // mark each port as belonging to this net
+                chip_status.set(port, net.id);
 
                 if port.1 == Dimension::X {
                     x_used = true;
@@ -44,6 +48,7 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
                 }
             }
 
+            // not sure if this is even necessary to handle.. neither v4 nor v5 have nodes on both edges of the same chip.
             if x_used && y_used {
                 todo!("Handle multiple edges on the same chip");
             }
