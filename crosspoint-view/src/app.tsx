@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import layout from './layout.json'
 
@@ -94,7 +94,7 @@ function statusToString(status: { [chip: string]: StatusType }): string {
 }
 
 const App: React.FC = () => {
-  const [status, setStatus] = useState({
+  const [status, setStatus] = useState<{ [chip: string]: StatusType }>({
     A: {},
     B: {},
     C: {},
@@ -117,8 +117,23 @@ const App: React.FC = () => {
       },
     })
   }, [status])
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    let hexconfig = parseHexconfig(e.currentTarget.hexconfig.value)
+    if (hexconfig) {
+      setStatus(hexconfig)
+    } else {
+      alert('Invalid hexconfig')
+    }
+  }
+
   return (
     <>
+      <form onSubmit={handleSubmit}>
+        <input type="string" defaultValue="" name="hexconfig" />
+        <button type="submit">load</button>
+      </form>
       <div className='Crosspoints'>
         {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'].map(id => (
           <Crosspoint key={id} id={id} status={status[id]} onChange={(coords, state) => handleChange(id, coords, state)} />
@@ -132,3 +147,43 @@ const App: React.FC = () => {
 const root = createRoot(document.getElementById('root'))
 root.render(<App />)
 
+function parseHexconfig(input: string): { [chip: string]: StatusType } | null {
+  if (input.length != 384) {
+    console.error(`Input has incorrect size: ${input.length}, expected 384`)
+    return null
+  }
+
+  let data = []
+  for (let i = 0; i < 192; i++) {
+    console.log(i, input.slice(i * 2, i * 2 + 2))
+    data.push(parseInt(input.slice(i * 2, i * 2 + 2), 16))
+  }
+
+  console.log('bytes', data)
+
+  let status = {
+    A: {},
+    B: {},
+    C: {},
+    D: {},
+    E: {},
+    F: {},
+    G: {},
+    H: {},
+    I: {},
+    J: {},
+    K: {},
+    L: {},
+  };
+
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'].forEach((chipId, i) => {
+    for (let x = 0; x < 16; x++) {
+      for (let y = 0; y < 8; y++) {
+        let mask = 1 << y;
+        status[chipId][`${x}.${y}`] = (data[i * 16 + x] & mask) == mask
+      }
+    }
+  })
+
+  return status
+}
