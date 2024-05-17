@@ -5,7 +5,7 @@ use crate::{
     ChipPort,
     Dimension,
     ChipId,
-    Edge,
+    Edge, util::EdgeBitMap,
 };
 use std::collections::HashMap;
 
@@ -32,50 +32,50 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
 
         println!("Ports: {:?}", net.ports);
 
-        let mut edges = vec![];
+        // set of edges that need to be connected to satisfy the net
+        let mut edges = EdgeBitMap::empty();
 
         // go through each port by chip, and detect which edges need to be connected
         for (chip, ports) in by_chip {
-            let (mut x_used, mut y_used) = (false, false);
             for port in ports {
                 // mark each port as belonging to this net
                 chip_status.set(port, net.id);
 
-                if port.1 == Dimension::X {
-                    x_used = true;
-                } else {
-                    y_used = true;
-                }
-            }
-
-            // not sure if this is even necessary to handle.. neither v4 nor v5 have nodes on both edges of the same chip.
-            if x_used && y_used {
-                todo!("Handle multiple edges on the same chip");
-            }
-
-            if x_used {
-                edges.push(Edge(chip, Dimension::Y));
-            }
-
-            if y_used {
-                edges.push(Edge(chip, Dimension::X));
+                // to hook up this port, it's orthogonal edge must be connected
+                edges.set(port.edge().orthogonal());
             }
         }
 
         println!("Net {:?} has {} edges: {:?}", net.id, edges.len(), edges);
 
         if edges.len() == 1 { // single-chip net. Will be connected at the very end.
-            pending_edge_nets.push((edges[0], net.id));
-        } else if edges.len() == 2 {
-            if let Some(lane) = take_lane(&mut lanes, |lane| lane.touches(edges[0]) && lane.touches(edges[1])) {
-                // connect directly, with a lane
-                chip_status.set_lane(lane, net.id);
-            } else {
-                // connect later, bounced through another chip
-                pending_bounces.push((edges[0], edges[1], net.id));
-            }
+            pending_edge_nets.push((edges.pop().unwrap(), net.id));
         } else {
-            todo!("More than 2 edges");
+            let mut connected_edges = EdgeBitMap::empty();
+
+            connected_edges.set(edges.pop().unwrap());
+
+            while edges.len() > 0 {
+                // attempt to find a direct lane for one of the edge pairs
+                let mut direct = None;
+                'outer: for unconnected in edges.iter() {
+                    for connected in connected_edges.iter() {
+                        if let Some(lane) = take_lane(&mut lanes, |lane| lane.connects(connected, unconnected)) {
+                            direct = Some((unconnected, lane));
+                            break 'outer;
+                        }
+                    }
+                }
+                if let Some((edge, lane)) = direct {
+                    chip_status.set_lane(lane, net.id);
+                    connected_edges.set(edge);
+                    edges.clear(edge);
+                } else {
+                    // no direct lane found, add the first pair as a bounce candidate, and try again
+                    // (this will likely fail, but it's a start)
+                    pending_bounces.push((connected_edges.iter().next().unwrap(), edges.pop().unwrap(), net.id));
+                }
+            }
         }
     }
 

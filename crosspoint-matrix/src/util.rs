@@ -1,4 +1,4 @@
-use crate::{ChipPort, ChipId, Dimension};
+use crate::{ChipPort, ChipId, Dimension, Edge};
 
 /// A bitmap that can hold a boolean for every chip port.
 ///
@@ -77,5 +77,131 @@ impl ChipPortBitMap {
         let ChipPort(chip, dimension, index) = port;
         let bit_address = chip.index() * 24 + if dimension == Dimension::X { 0 } else { 16 } + index as usize;
         (bit_address / 8, bit_address % 8)
+    }
+}
+
+#[derive(Debug)]
+pub struct EdgeBitMap([u8; 3]);
+
+impl EdgeBitMap {
+    pub fn empty() -> Self {
+        Self([0; 3])
+    }
+
+    pub fn get(&self, edge: Edge) -> bool {
+        let (i, j) = Self::address(edge);
+        (self.0[i] >> j) & 1 == 1
+    }
+
+    pub fn set(&mut self, edge: Edge) {
+        let (i, j) = Self::address(edge);
+        self.0[i] |= 1 << j
+    }
+
+    pub fn clear(&mut self, edge: Edge) {
+        let (i, j) = Self::address(edge);
+        self.0[i] &= !(1 << j)
+    }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Edge> + 'a {
+        (0..24).filter_map(|address| {
+            let edge = Self::edge_from_address(address);
+            if self.get(edge) {
+                Some(edge)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.iter().count()
+    }
+
+    pub fn pop(&mut self) -> Option<Edge> {
+        let first = self.iter().next();
+        first.map(|edge| { self.clear(edge); edge })
+    }
+
+    fn address(Edge(chip, dimension): Edge) -> (usize, usize) {
+        let bit_address = chip.index() * 2 + if dimension == Dimension::X { 0 } else { 1 };
+        (bit_address / 8, bit_address % 8)
+    }
+
+    fn edge_from_address(address: usize) -> Edge {
+        Edge(ChipId::from_index(address >> 1), if address & 1 == 0 { Dimension::X } else { Dimension::Y })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_edge_bit_map_empty() {
+        let edges = EdgeBitMap::empty();
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![]);
+    }
+
+    #[test]
+    fn test_edge_bit_map_single_edge() {
+        let mut edges = EdgeBitMap::empty();
+        let edge = Edge(ChipId(b'C'), Dimension::X);
+        edges.set(edge);
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![edge]);
+
+        let mut edges = EdgeBitMap::empty();
+        let edge = Edge(ChipId(b'C'), Dimension::Y);
+        edges.set(edge);
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![edge]);
+
+        let mut edges = EdgeBitMap::empty();
+        let edge = Edge(ChipId(b'A'), Dimension::X);
+        edges.set(edge);
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![edge]);
+    }
+
+    #[test]
+    fn test_edge_bit_map_multiple_edges() {
+        let mut edges = EdgeBitMap::empty();
+        let ax = Edge(ChipId(b'A'), Dimension::X);
+        let ay = Edge(ChipId(b'A'), Dimension::Y);
+        let iy = Edge(ChipId(b'I'), Dimension::Y);
+        edges.set(ax);
+        edges.set(ay);
+        edges.set(iy);
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![ax, ay, iy]);
+    }
+
+    #[test]
+    fn test_edge_bit_map_clear() {
+        let mut edges = EdgeBitMap::empty();
+        let ax = Edge(ChipId(b'A'), Dimension::X);
+        let ay = Edge(ChipId(b'A'), Dimension::Y);
+        let iy = Edge(ChipId(b'I'), Dimension::Y);
+        edges.set(ax);
+        edges.set(ay);
+        edges.set(iy);
+        edges.clear(ay);
+        assert_eq!(edges.iter().collect::<Vec<_>>(), vec![ax, iy]);
+    }
+
+    #[test]
+    fn test_edge_bit_map_pop_and_len() {
+        let mut edges = EdgeBitMap::empty();
+        let ax = Edge(ChipId(b'A'), Dimension::X);
+        let ay = Edge(ChipId(b'A'), Dimension::Y);
+        let iy = Edge(ChipId(b'I'), Dimension::Y);
+        edges.set(ax);
+        edges.set(ay);
+        edges.set(iy);
+        assert_eq!(edges.len(), 3);
+        assert_eq!(edges.pop(), Some(ax));
+        assert_eq!(edges.len(), 2);
+        assert_eq!(edges.pop(), Some(ay));
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges.pop(), Some(iy));
+        assert_eq!(edges.len(), 0);
+        assert_eq!(edges.pop(), None);
     }
 }

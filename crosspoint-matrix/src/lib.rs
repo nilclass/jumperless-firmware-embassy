@@ -143,7 +143,6 @@ impl Lane {
     }
 }
 
-
 /// Represents a crossing 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Crosspoint {
@@ -199,6 +198,46 @@ pub fn print_crosspoints(crosspoints: impl Iterator<Item = Crosspoint>) {
             println!("");
         }
         println!("");
+    }
+}
+
+/// A crosspoint config holds one bit for each of the 1536 switches on the jumperless.
+pub struct CrosspointConfig([u8; 192]);
+
+impl FromIterator<Crosspoint> for CrosspointConfig {
+    fn from_iter<T: IntoIterator<Item = Crosspoint>>(iter: T) -> Self {
+        let mut config = CrosspointConfig([0; 192]);
+
+        for crosspoint in iter {
+            config.set(crosspoint);
+        }
+
+        config
+    }
+}
+
+const HEX_CHARS: &[u8; 16] = b"0123456789ABCDEF";
+
+impl CrosspointConfig {
+    pub fn get(&self, crosspoint: Crosspoint) -> bool {
+        (self.0[crosspoint.chip.index() * 16 + crosspoint.x as usize] >> crosspoint.y) & 1 == 1
+    }
+
+    pub fn set(&mut self, crosspoint: Crosspoint) {
+        self.0[crosspoint.chip.index() * 16 + crosspoint.x as usize] |= 1 << crosspoint.y;
+    }
+
+    pub fn clear(&mut self, crosspoint: Crosspoint) {
+        self.0[crosspoint.chip.index() * 16 + crosspoint.x as usize] &= !(1 << crosspoint.y);
+    }
+
+    pub fn to_hex_bytes(&self) -> [u8; 384] {
+        let mut buf = [0; 384];
+        for (i, byte) in self.0.iter().enumerate() {
+            buf[i * 2] = HEX_CHARS[((byte >> 4) & 0xF) as usize];
+            buf[i * 2 + 1] = HEX_CHARS[(byte & 0xF) as usize];
+        }
+        buf
     }
 }
 
@@ -306,34 +345,33 @@ mod tests {
         ]);
     }
 
-    /// THIS ONE DOESN'T WORK YET:
-
-    // #[test]
-    // fn test_multiple_chips() {
-    //     let layout = Layout::v4();
-    //     let mut chip_status = ChipStatus::default();
-    //     let mut nets = [
-    //         // two nodes on the same chip, two other nodes on other chips each
-    //         NodeNet {
-    //             id: 1.into(),
-    //             nodes: vec![
-    //                 // Jx14
-    //                 Node::Supply5V,
-    //                 // Ay2
-    //                 Node::Top3,
-    //                 // Ay3
-    //                 Node::Top4,
-    //                 // Ey4
-    //                 Node::Bottom5,
-    //             ],
-    //         },
-    //     ];
-    //     normalize_nets(&mut nets);
-    //     layout.nets_to_connections(&nets, &mut chip_status);
-    //     let extracted = node_nets_from_chip_status(&chip_status, &layout);
-    //     assert_eq!(&nets[..], &extracted[..]);
-    //     check_connectivity(&chip_status, &nets, &layout);
-    // }
+    #[test]
+    fn test_multiple_chips() {
+        let layout = Layout::v4();
+        let mut chip_status = ChipStatus::default();
+        let mut nets = [
+            // two nodes on the same chip, two other nodes on other chips each
+            NodeNet {
+                id: 1.into(),
+                nodes: vec![
+                    // Jx14
+                    Node::Supply5V,
+                    // Ay2
+                    Node::Top3,
+                    // Ay3
+                    Node::Top4,
+                    // Ey4
+                    Node::Bottom5,
+                ],
+            },
+        ];
+        normalize_nets(&mut nets);
+        layout.nets_to_connections(&nets, &mut chip_status);
+        let extracted = node_nets_from_chip_status(&chip_status, &layout);
+        assert_eq!(&nets[..], &extracted[..]);
+        check_connectivity(&chip_status, &nets, &layout);
+        print_crosspoints(chip_status.crosspoints());
+    }
 
     fn test_netlist(nets: &mut [NodeNet], expected_crosspoints: &[Crosspoint]) {
         // normalize nets, to make it comparisons easier
