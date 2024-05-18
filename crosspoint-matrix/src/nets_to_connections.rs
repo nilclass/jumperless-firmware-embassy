@@ -2,7 +2,7 @@ use crate::{
     Net,
     ChipStatus,
     Lane,
-    util::{EdgeBitMap, LaneSet},
+    util::{EdgeSet, LaneSet},
 };
 
 use log::debug;
@@ -24,14 +24,14 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
         debug!("Ports: {:?}", net.ports);
 
         // set of edges that need to be connected to satisfy the net
-        let mut edges = EdgeBitMap::empty();
+        let mut edges = EdgeSet::empty();
 
         for port in net.ports {
             // mark each port as belonging to this net
             chip_status.set(port, net.id);
 
             // to hook up this port, it's orthogonal edge must be connected
-            edges.set(port.edge().orthogonal());
+            edges.insert(port.edge().orthogonal());
         }
 
         debug!("Net {:?} has {} edges: {:?}", net.id, edges.len(), edges);
@@ -39,9 +39,9 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
         if edges.len() == 1 { // single-chip net. Will be connected at the very end, using an arbitrary free lane port.
             pending_edge_nets.push((edges.pop().unwrap(), net.id));
         } else {
-            let mut connected_edges = EdgeBitMap::empty();
+            let mut connected_edges = EdgeSet::empty();
 
-            connected_edges.set(edges.pop().unwrap());
+            connected_edges.insert(edges.pop().unwrap());
 
             while edges.len() > 0 {
                 // attempt to find a direct lane for one of the edge pairs
@@ -56,8 +56,8 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
                 }
                 if let Some((edge, lane)) = direct {
                     chip_status.set_lane(lane, net.id);
-                    connected_edges.set(edge);
-                    edges.clear(edge);
+                    connected_edges.insert(edge);
+                    edges.remove(edge);
                 } else {
                     // no direct lane found, add the first pair as a bounce candidate, and try again
                     // (this will likely fail, but it's a start)

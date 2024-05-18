@@ -3,10 +3,10 @@ use crate::{
     NetId,
     Net,
     Dimension,
-    ChipPort,
+    Port,
     Crosspoint,
     Lane,
-    util::ChipPortBitMap,
+    util::PortSet,
     layout,
 };
 
@@ -32,7 +32,7 @@ impl ChipStatus {
     }
 
     /// Retrieve net id assigned to given port
-    pub fn get(&self, port: ChipPort) -> Option<NetId> {
+    pub fn get(&self, port: Port) -> Option<NetId> {
         let entry = &self.0[port.0.index()];
         match port.1 {
             Dimension::X => entry.x[port.2 as usize],
@@ -43,7 +43,7 @@ impl ChipStatus {
     /// Assign net id to given port
     ///
     /// Panics if the port is already assigned to a different net.
-    pub fn set(&mut self, port: ChipPort, net: NetId) {
+    pub fn set(&mut self, port: Port, net: NetId) {
         if let Some(existing) = self.get(port) {
             panic!("Already set: {:?}, have {:?}, want {:?}", port, existing, net);
         }
@@ -65,7 +65,7 @@ impl ChipStatus {
     }
 
     /// Is the given port available? (i.e. no net assigned to it?)
-    pub fn available(&self, port: ChipPort) -> bool {
+    pub fn available(&self, port: Port) -> bool {
         self.get(port).is_none()
     }
 
@@ -94,7 +94,7 @@ impl ChipStatus {
     pub(crate) fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(&self, net_id: NetId, layout: &layout::Layout<NODE_COUNT, LANE_COUNT>) {
         // println!("Check connectivity of net {:?}", net_id);
         // contains every port that this net must contain (those that resolve to Nodes)
-        let mut required = ChipPortBitMap::empty();
+        let mut required = PortSet::empty();
 
         let mut first = None;
 
@@ -105,7 +105,7 @@ impl ChipStatus {
                     let port = chip.port_x(x as u8);
                     if layout.port_to_node(port).is_some() {
                         // println!("REQUIRED: {:?}", port);
-                        required.set(port);
+                        required.insert(port);
                         if first.is_none() {
                             first = Some(port);
                         }
@@ -117,7 +117,7 @@ impl ChipStatus {
                     let port = chip.port_y(y as u8);
                     if layout.port_to_node(port).is_some() {
                         // println!("REQUIRED: {:?}", port);
-                        required.set(port);
+                        required.insert(port);
                         if first.is_none() {
                             first = Some(port);
                         }
@@ -133,7 +133,7 @@ impl ChipStatus {
         // println!("Required bitmap: {:?}", required.0);
 
         // keep track of nodes that were visited
-        let mut visited = ChipPortBitMap::empty();
+        let mut visited = PortSet::empty();
 
         self.visit_port(first, &mut visited, &mut |port, value| {
             if value == Some(net_id) {
@@ -148,7 +148,7 @@ impl ChipStatus {
 
         // println!("Visited bitmap: {:?}", visited.0);
 
-        if !visited.contains(&required) {
+        if !visited.is_superset(&required) {
 
             visited.print_diff(&required);
 
@@ -156,9 +156,10 @@ impl ChipStatus {
         }
     }
 
-    fn visit_port<F: FnMut(ChipPort, Option<NetId>) -> Visit>(&self, start: ChipPort, visited: &mut ChipPortBitMap, visit: &mut F) {
+    /// Performs a depth-first search of ports that are connected to the same net, guided by the given `visit` closure.
+    fn visit_port<F: FnMut(Port, Option<NetId>) -> Visit>(&self, start: Port, visited: &mut PortSet, visit: &mut F) {
         // println!("Visit port {:?}", start);
-        visited.set(start);
+        visited.insert(start);
 
         // keep track if we "marked" any of the ports on the orthogonal edge
         // (if so, we also visit the adjacent edge)
@@ -167,7 +168,7 @@ impl ChipStatus {
         // first visit all ports on the "other" edge
         for port in start.edge().orthogonal().ports() {
             // println!("CHECK {:?}", port);
-            if visited.get(port) {
+            if visited.contains(port) {
                 // println!("VISITED");
                 // skip this one, we've already been here!
                 continue;
@@ -179,12 +180,12 @@ impl ChipStatus {
                 Visit::Mark => {
                     // println!("MARK {:?}", port);
                     marked_orthogonal = true;
-                    visited.set(port);
+                    visited.insert(port);
                 },
                 Visit::MarkAndFollow(follow) => {
                     // println!("MARK {:?}, FOLLOW {:?}", port, follow);
                     marked_orthogonal = true;
-                    visited.set(port);
+                    visited.insert(port);
                     self.visit_port(follow, visited, visit);
                 },
             }
@@ -192,7 +193,7 @@ impl ChipStatus {
 
         if marked_orthogonal {
             for port in start.edge().ports() {
-                if visited.get(port) {
+                if visited.contains(port) {
                     // skip this one, we've already been here!
                     continue;
                 }
@@ -202,11 +203,11 @@ impl ChipStatus {
                     Visit::Skip => {},
                     Visit::Mark => {
                         // println!("MARK {:?}", port);
-                        visited.set(port);
+                        visited.insert(port);
                     },
                     Visit::MarkAndFollow(follow) => {
                         // println!("MARK {:?}, FOLLOW {:?}", port, follow);
-                        visited.set(port);
+                        visited.insert(port);
                         self.visit_port(follow, visited, visit);
                     },
                 }
@@ -218,7 +219,7 @@ impl ChipStatus {
 enum Visit {
     Skip,
     Mark,
-    MarkAndFollow(ChipPort),
+    MarkAndFollow(Port),
 }
 
 #[cfg(feature = "std")]
@@ -230,13 +231,13 @@ impl From<&ChipStatus> for Vec<Net> {
         for (chip_index, chip) in value.0.iter().enumerate() {
             for (i, x) in chip.x.iter().enumerate() {
                 if let Some(net_id) = x {
-                    nets.entry(*net_id).or_insert(Net { id: *net_id, ports: vec![] }).ports.push(ChipPort(ChipId::from_index(chip_index), Dimension::X, i as u8));
+                    nets.entry(*net_id).or_insert(Net { id: *net_id, ports: vec![] }).ports.push(Port(ChipId::from_index(chip_index), Dimension::X, i as u8));
                 }
             }
 
             for (i, y) in chip.y.iter().enumerate() {
                 if let Some(net_id) = y {
-                    nets.entry(*net_id).or_insert(Net { id: *net_id, ports: vec![] }).ports.push(ChipPort(ChipId::from_index(chip_index), Dimension::Y, i as u8));
+                    nets.entry(*net_id).or_insert(Net { id: *net_id, ports: vec![] }).ports.push(Port(ChipId::from_index(chip_index), Dimension::Y, i as u8));
                 }
             }
         }

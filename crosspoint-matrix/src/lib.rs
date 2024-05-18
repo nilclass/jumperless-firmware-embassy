@@ -49,14 +49,14 @@ impl ChipId {
         Self(b'A' + index as u8)
     }
 
-    /// Get chip port on the X edge, at given index
-    pub fn port_x(&self, x: u8) -> ChipPort {
-        ChipPort(*self, Dimension::X, x)
+    /// Get port on the X edge, at given index
+    pub fn port_x(&self, x: u8) -> Port {
+        Port(*self, Dimension::X, x)
     }
 
-    /// Get chip port on the Y edge, at given index
-    pub fn port_y(&self, y: u8) -> ChipPort {
-        ChipPort(*self, Dimension::Y, y)
+    /// Get port on the Y edge, at given index
+    pub fn port_y(&self, y: u8) -> Port {
+        Port(*self, Dimension::Y, y)
     }
 }
 
@@ -89,6 +89,21 @@ impl Dimension {
             Dimension::Y => Dimension::X,
         }
     }
+
+    pub fn index(&self) -> usize {
+        match self {
+            Dimension::X => 0,
+            Dimension::Y => 1,
+        }
+    }
+
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => Dimension::X,
+            1 => Dimension::Y,
+            _ => panic!("Invalid dimension index"),
+        }
+    }
 }
 
 /// Represents one of the sides (X/Y) of a specific chip.
@@ -103,13 +118,12 @@ impl Edge {
     }
 
     /// Iterate over all the ports on this edge
-    pub fn ports(&self) -> impl Iterator<Item = ChipPort> {
+    pub fn ports(&self) -> impl Iterator<Item = Port> {
         let Edge(chip, dimension) = *self;
-        let range = match dimension {
+        match dimension {
             Dimension::X => 0..16,
             Dimension::Y => 0..8,
-        };
-        range.map(move |index| ChipPort(chip, dimension, index))
+        }.map(move |index| Port(chip, dimension, index))
     }
 }
 
@@ -118,25 +132,25 @@ impl Edge {
 /// Examples: Ay0, Bx7
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(Debug))]
-pub struct ChipPort(ChipId, Dimension, u8);
+pub struct Port(ChipId, Dimension, u8);
 
-impl ChipPort {
+impl Port {
     /// The edge on which this port resides
     ///
     /// Example:
-    ///   ChipPort(ChipId(b'C'), Dimension::Y, 4).edge() //=> Edge(ChipId(b'C'), Dimension::Y)
+    ///   Port(ChipId(b'C'), Dimension::Y, 4).edge() //=> Edge(ChipId(b'C'), Dimension::Y)
     pub fn edge(&self) -> Edge {
         Edge(self.0, self.1)
     }
 }
 
 
-/// A Lane connects to ChipPorts (on different chips)
+/// A Lane is a physical connection between two ports (on distinct chips)
 #[derive(Copy, Clone)]
-pub struct Lane(ChipPort, ChipPort);
+pub struct Lane(Port, Port);
 
 impl Lane {
-    /// Is one of the endpoints of this lane on the given edge?
+    /// Is one of the ports of this lane on the given edge?
     pub fn touches(&self, edge: Edge) -> bool {
         self.0.edge() == edge || self.1.edge() == edge
     }
@@ -158,14 +172,14 @@ pub struct Crosspoint {
     pub y: u8,
 }
 
-/// A net is a collection of ChipPorts which are supposed to be interconnected.
+/// A net is a collection of Ports which are supposed to be interconnected.
 ///
-/// The routing code does not know (or care) about nodes, just about chip ports.
+/// The routing code does not know (or care) about nodes, just about ports.
 /// The `layout` module provides a `NodeNet` type, which represents a net in terms of nodes.
 /// A board-specific layout converts between the two.
 pub struct Net {
     id: NetId,
-    ports: Vec<ChipPort>,
+    ports: Vec<Port>,
 }
 
 #[cfg(feature = "std")]
