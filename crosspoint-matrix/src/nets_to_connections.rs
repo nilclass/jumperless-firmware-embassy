@@ -2,11 +2,10 @@ use crate::{
     Net,
     ChipStatus,
     Lane,
-    ChipPort,
-    Dimension,
-    ChipId,
-    Edge, util::EdgeBitMap,
+    util::{EdgeBitMap, LaneSet},
 };
+
+use log::debug;
 
 /// Turn given list of `nets` into connections. The connections are made by modifying the given `chip_status` (which is expected to be empty to begin with).
 ///
@@ -17,13 +16,12 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
     // list of pairs of edges that need a bounce in between
     let mut pending_bounces = vec![];
 
-    // Copy list of lanes to a heap-allocated list. We remove lanes that are used as we go, so this always contains
-    // lanes that are still available.
-    let mut lanes = lanes.to_vec();
+    // set of lanes that are available
+    let mut lanes = LaneSet::new(lanes);
 
     // For now, just go net-by-net, in the order they are given. Later on this could become more clever and route more complex nets first.
     for net in nets {
-        println!("Ports: {:?}", net.ports);
+        debug!("Ports: {:?}", net.ports);
 
         // set of edges that need to be connected to satisfy the net
         let mut edges = EdgeBitMap::empty();
@@ -36,7 +34,7 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
             edges.set(port.edge().orthogonal());
         }
 
-        println!("Net {:?} has {} edges: {:?}", net.id, edges.len(), edges.iter().collect::<Vec<_>>());
+        debug!("Net {:?} has {} edges: {:?}", net.id, edges.len(), edges);
 
         if edges.len() == 1 { // single-chip net. Will be connected at the very end, using an arbitrary free lane port.
             pending_edge_nets.push((edges.pop().unwrap(), net.id));
@@ -50,7 +48,7 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
                 let mut direct = None;
                 'outer: for unconnected in edges.iter() {
                     for connected in connected_edges.iter() {
-                        if let Some(lane) = take_lane(&mut lanes, |lane| lane.connects(connected, unconnected)) {
+                        if let Some(lane) = lanes.take(|lane| lane.connects(connected, unconnected)) {
                             direct = Some((unconnected, lane));
                             break 'outer;
                         }
@@ -75,10 +73,10 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
         // if one is found, it can be hooked up to the target nodes via any other free lane at the very end.
         let alt_edge_a = edge_a.orthogonal();
         let alt_edge_b = edge_b.orthogonal();
-        if let Some(lane) = take_lane(&mut lanes, |lane| lane.connects(alt_edge_a, edge_b)) {
+        if let Some(lane) = lanes.take(|lane| lane.connects(alt_edge_a, edge_b)) {
             chip_status.set_lane(lane, net_id);
             pending_edge_nets.push((edge_a, net_id));
-        } else if let Some(lane) = take_lane(&mut lanes, |lane| lane.connects(edge_a, alt_edge_b)) {
+        } else if let Some(lane) = lanes.take(|lane| lane.connects(edge_a, alt_edge_b)) {
             chip_status.set_lane(lane, net_id);
             pending_edge_nets.push((edge_b, net_id));
         } else { // bounce via orthagonal edge not possible. Try to find a path via another chip.
@@ -88,34 +86,10 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
 
     // Connect the remaining edges
     for (edge, net_id) in pending_edge_nets {
-        let mut lane_index = None;
-        // find a free lane that touches the edge
-        for (i, lane) in lanes.iter().enumerate() {
-            if lane.0.edge() == edge || lane.1.edge() == edge {
-                lane_index = Some(i);
-                break;
-            }
-        }
-        if let Some(i) = lane_index {
-            chip_status.set_lane(lanes.remove(i), net_id);
+        if let Some(lane) = lanes.take(|lane| lane.touches(edge)) {
+            chip_status.set_lane(lane, net_id);
         } else {
             todo!("No available lane ports on edge {:?}", edge);
         }
-    }
-}
-
-/// Take (remove) the first lane from the given list of lanes that matches the predicate.
-fn take_lane<F: Fn(&Lane) -> bool>(lanes: &mut Vec<Lane>, predicate: F) -> Option<Lane> {
-    let mut index = None;
-    for (i, lane) in lanes.iter().enumerate() {
-        if predicate(lane) {
-            index = Some(i);
-            break;
-        }
-    }
-    if let Some(index) = index {
-        Some(lanes.remove(index))
-    } else {
-        None
     }
 }

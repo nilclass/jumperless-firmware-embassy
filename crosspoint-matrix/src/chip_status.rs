@@ -9,7 +9,6 @@ use crate::{
     util::ChipPortBitMap,
     layout,
 };
-use std::collections::HashMap;
 
 /// Assigns a net to every chip port
 ///
@@ -93,7 +92,7 @@ impl ChipStatus {
     /// If all of the required ports have been visited, then all of them must be connected by at least one path.
     #[allow(unused)]
     pub(crate) fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(&self, net_id: NetId, layout: &layout::Layout<NODE_COUNT, LANE_COUNT>) {
-        println!("Check connectivity of net {:?}", net_id);
+        // println!("Check connectivity of net {:?}", net_id);
         // contains every port that this net must contain (those that resolve to Nodes)
         let mut required = ChipPortBitMap::empty();
 
@@ -222,8 +221,11 @@ enum Visit {
     MarkAndFollow(ChipPort),
 }
 
+#[cfg(feature = "std")]
 impl From<&ChipStatus> for Vec<Net> {
     fn from(value: &ChipStatus) -> Self {
+        use std::collections::HashMap;
+
         let mut nets: HashMap<NetId, Net> = HashMap::new();
         for (chip_index, chip) in value.0.iter().enumerate() {
             for (i, x) in chip.x.iter().enumerate() {

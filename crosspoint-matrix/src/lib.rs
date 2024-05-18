@@ -1,8 +1,7 @@
-// #![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![feature(let_chains)]
 
-use std::fmt::Display;
-use std::num::NonZeroU8;
+use core::num::NonZeroU8;
 
 pub mod layout;
 
@@ -20,12 +19,14 @@ pub use nets_to_connections::nets_to_connections;
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct ChipId(u8);
 
-impl Display for ChipId {
+#[cfg(feature = "std")]
+impl std::fmt::Display for ChipId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", core::str::from_utf8(&[self.0]).unwrap())
     }
 }
 
+#[cfg(feature="std")]
 impl std::fmt::Debug for ChipId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "ChipId({})", core::str::from_utf8(&[self.0]).unwrap())
@@ -60,7 +61,8 @@ impl ChipId {
 }
 
 /// Identifier for a net. Should be unique within a netlist.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "std", derive(Debug))]
 pub struct NetId(NonZeroU8);
 
 impl From<u8> for NetId {
@@ -70,7 +72,8 @@ impl From<u8> for NetId {
 }
 
 /// Either X or Y. Used to specify ports and edges.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(Debug))]
 pub enum Dimension {
     X,
     Y,
@@ -89,7 +92,8 @@ impl Dimension {
 }
 
 /// Represents one of the sides (X/Y) of a specific chip.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(Debug))]
 pub struct Edge(ChipId, Dimension);
 
 impl Edge {
@@ -112,7 +116,8 @@ impl Edge {
 /// Represents a single connection point on one of the chip edges
 ///
 /// Examples: Ay0, Bx7
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(Debug))]
 pub struct ChipPort(ChipId, Dimension, u8);
 
 impl ChipPort {
@@ -144,7 +149,8 @@ impl Lane {
 }
 
 /// Represents a crossing 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(Debug))]
 pub struct Crosspoint {
     pub chip: ChipId,
     pub net_id: NetId,
@@ -162,6 +168,7 @@ pub struct Net {
     ports: Vec<ChipPort>,
 }
 
+#[cfg(feature = "std")]
 /// Pretty-print crosspoint matrix configuration
 pub fn print_crosspoints(crosspoints: impl Iterator<Item = Crosspoint>) {
     let mut matrices = [

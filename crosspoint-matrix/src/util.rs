@@ -1,6 +1,6 @@
-use crate::{ChipPort, ChipId, Dimension, Edge};
+use crate::{ChipPort, ChipId, Dimension, Edge, Lane};
 
-/// A bitmap that can hold a boolean for every chip port.
+/// A bitmap that can hold a boolean for every [`ChipPort`].
 ///
 /// Useful for various algorithms.
 #[derive(Eq, PartialEq)]
@@ -45,6 +45,7 @@ impl ChipPortBitMap {
         true
     }
 
+    #[cfg(feature = "std")]
     pub fn print_diff(&self, other: &Self) {
         println!("BEGIN DIFF");
         for i in 0..12 {
@@ -80,7 +81,7 @@ impl ChipPortBitMap {
     }
 }
 
-#[derive(Debug)]
+/// A bitmap holding a boolean for every [`Edge`].
 pub struct EdgeBitMap([u8; 3]);
 
 impl EdgeBitMap {
@@ -130,6 +131,49 @@ impl EdgeBitMap {
 
     fn edge_from_address(address: usize) -> Edge {
         Edge(ChipId::from_index(address >> 1), if address & 1 == 0 { Dimension::X } else { Dimension::Y })
+    }
+}
+
+impl core::fmt::Debug for EdgeBitMap {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.iter().fold(
+            &mut f.debug_list(),
+            |list, edge| list.entry(&edge),
+        ).finish()
+    }
+}
+
+pub struct LaneSet<'a>(&'a [Lane], [u8; 16]);
+
+impl<'a> LaneSet<'a> {
+    /// Construct a new LaneSet holding the given lanes
+    pub fn new(lanes: &'a [Lane]) -> Self {
+        assert!(lanes.len() < 128);
+        Self(lanes, [0xFF; 16])
+    }
+
+    /// Remove the first lane that matches given predicate and return it
+    pub fn take<F: Fn(Lane) -> bool>(&mut self, predicate: F) -> Option<Lane> {
+        for i in 0..self.0.len() {
+            if self.has_index(i) {
+                let lane = self.0[i];
+                if predicate(lane) {
+                    self.clear_index(i);
+                    return Some(lane)
+                }
+            }
+        }
+        None
+    }
+
+    fn has_index(&self, index: usize) -> bool {
+        let (i, j) = (index / 8, index % 8);
+        (self.1[i] >> j) & 1 == 1
+    }
+
+    fn clear_index(&mut self, index: usize) {
+        let (i, j) = (index / 8, index % 8);
+        self.1[i] &= !(1 << j);
     }
 }
 

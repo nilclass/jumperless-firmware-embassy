@@ -57,6 +57,10 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
         }
     }
 
+}
+
+#[cfg(feature = "std")]
+impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_COUNT> {
     /// Verify that all possible ports are referenced by exactly one node mapping or exactly one lane.
     ///
     /// Prints problems to stdout and panics if a check has failed.
@@ -418,6 +422,7 @@ pub enum Node {
 #[derive(Debug)]
 pub struct InvalidNode;
 
+#[cfg(feature = "std")]
 impl std::str::FromStr for Node {
     type Err = InvalidNode;
 
