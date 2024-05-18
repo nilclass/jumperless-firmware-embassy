@@ -7,7 +7,6 @@ use crate::{
     ChipId,
     Edge, util::EdgeBitMap,
 };
-use std::collections::HashMap;
 
 /// Turn given list of `nets` into connections. The connections are made by modifying the given `chip_status` (which is expected to be empty to begin with).
 ///
@@ -24,31 +23,22 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
 
     // For now, just go net-by-net, in the order they are given. Later on this could become more clever and route more complex nets first.
     for net in nets {
-        // group the ports by chip
-        let mut by_chip: HashMap<ChipId, Vec<ChipPort>> = HashMap::new();
-        for port in &net.ports {
-            by_chip.entry(port.0).or_default().push(*port);
-        }
-
         println!("Ports: {:?}", net.ports);
 
         // set of edges that need to be connected to satisfy the net
         let mut edges = EdgeBitMap::empty();
 
-        // go through each port by chip, and detect which edges need to be connected
-        for (chip, ports) in by_chip {
-            for port in ports {
-                // mark each port as belonging to this net
-                chip_status.set(port, net.id);
+        for port in net.ports {
+            // mark each port as belonging to this net
+            chip_status.set(port, net.id);
 
-                // to hook up this port, it's orthogonal edge must be connected
-                edges.set(port.edge().orthogonal());
-            }
+            // to hook up this port, it's orthogonal edge must be connected
+            edges.set(port.edge().orthogonal());
         }
 
-        println!("Net {:?} has {} edges: {:?}", net.id, edges.len(), edges);
+        println!("Net {:?} has {} edges: {:?}", net.id, edges.len(), edges.iter().collect::<Vec<_>>());
 
-        if edges.len() == 1 { // single-chip net. Will be connected at the very end.
+        if edges.len() == 1 { // single-chip net. Will be connected at the very end, using an arbitrary free lane port.
             pending_edge_nets.push((edges.pop().unwrap(), net.id));
         } else {
             let mut connected_edges = EdgeBitMap::empty();

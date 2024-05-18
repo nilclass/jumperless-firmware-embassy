@@ -347,9 +347,12 @@ mod tests {
 
     #[test]
     fn test_multiple_chips() {
-        let layout = Layout::v4();
-        let mut chip_status = ChipStatus::default();
-        let mut nets = [
+        let a = ChipId(b'A');
+        let e = ChipId(b'E');
+        let j = ChipId(b'J');
+        let net_id = 1.into();
+
+        test_netlist(&mut [
             // two nodes on the same chip, two other nodes on other chips each
             NodeNet {
                 id: 1.into(),
@@ -364,13 +367,20 @@ mod tests {
                     Node::Bottom5,
                 ],
             },
-        ];
-        normalize_nets(&mut nets);
-        layout.nets_to_connections(&nets, &mut chip_status);
-        let extracted = node_nets_from_chip_status(&chip_status, &layout);
-        assert_eq!(&nets[..], &extracted[..]);
-        check_connectivity(&chip_status, &nets, &layout);
-        print_crosspoints(chip_status.crosspoints());
+        ], &[
+            // lane to J, with node top3
+            Crosspoint { chip: a, net_id, x: 1, y: 2 },
+            // lane to J, with node top4
+            Crosspoint { chip: a, net_id, x: 1, y: 3 },
+            // lane to E, with node top3
+            Crosspoint { chip: a, net_id, x: 8, y: 2 },
+            // lane to E, with node top4
+            Crosspoint { chip: a, net_id, x: 8, y: 3 },
+            // lane to A, with node bottom5
+            Crosspoint { chip: e, net_id, x: 0, y: 4 },
+            // lane to A, with node supply5v
+            Crosspoint { chip: j, net_id, x: 14, y: 0 },
+        ]);
     }
 
     fn test_netlist(nets: &mut [NodeNet], expected_crosspoints: &[Crosspoint]) {

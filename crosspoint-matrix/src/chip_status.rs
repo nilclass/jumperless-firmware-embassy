@@ -54,7 +54,7 @@ impl ChipStatus {
             Dimension::X => entry.x[port.2 as usize] = Some(net),
             Dimension::Y => entry.y[port.2 as usize] = Some(net),
         }
-        println!("SET {:?} to {:?}", port, net)
+        // println!("SET {:?} to {:?}", port, net)
     }
 
     /// Assign given net id to both ends of given lane
@@ -105,7 +105,7 @@ impl ChipStatus {
                 if *value == Some(net_id) {
                     let port = chip.port_x(x as u8);
                     if layout.port_to_node(port).is_some() {
-                        println!("REQUIRED: {:?}", port);
+                        // println!("REQUIRED: {:?}", port);
                         required.set(port);
                         if first.is_none() {
                             first = Some(port);
@@ -117,7 +117,7 @@ impl ChipStatus {
                 if *value == Some(net_id) {
                     let port = chip.port_y(y as u8);
                     if layout.port_to_node(port).is_some() {
-                        println!("REQUIRED: {:?}", port);
+                        // println!("REQUIRED: {:?}", port);
                         required.set(port);
                         if first.is_none() {
                             first = Some(port);
