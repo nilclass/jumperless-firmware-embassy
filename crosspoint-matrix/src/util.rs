@@ -81,26 +81,23 @@ impl PortSet {
 }
 
 /// A set of edges. Implemented as a bitmap.
-pub struct EdgeSet([u8; 3]);
+pub struct EdgeSet(u32);
 
 impl EdgeSet {
     pub fn empty() -> Self {
-        Self([0; 3])
+        Self(0)
     }
 
     pub fn contains(&self, edge: Edge) -> bool {
-        let (i, j) = Self::address(edge);
-        (self.0[i] >> j) & 1 == 1
+        (self.0 >> Self::address(edge)) & 1 == 1
     }
 
     pub fn insert(&mut self, edge: Edge) {
-        let (i, j) = Self::address(edge);
-        self.0[i] |= 1 << j
+        self.0 |= 1 << Self::address(edge)
     }
 
     pub fn remove(&mut self, edge: Edge) {
-        let (i, j) = Self::address(edge);
-        self.0[i] &= !(1 << j)
+        self.0 &= !(1 << Self::address(edge))
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = Edge> + 'a {
@@ -115,7 +112,7 @@ impl EdgeSet {
     }
 
     pub fn len(&self) -> usize {
-        self.iter().count()
+        self.0.count_ones() as usize
     }
 
     pub fn pop(&mut self) -> Option<Edge> {
@@ -123,9 +120,8 @@ impl EdgeSet {
         first.map(|edge| { self.remove(edge); edge })
     }
 
-    fn address(Edge(chip, dimension): Edge) -> (usize, usize) {
-        let bit_address = chip.index() * 2 + dimension.index();
-        (bit_address / 8, bit_address % 8)
+    fn address(Edge(chip, dimension): Edge) -> usize {
+        chip.index() * 2 + dimension.index()
     }
 
     fn edge_from_address(address: usize) -> Edge {
