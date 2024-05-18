@@ -2,19 +2,25 @@ use crate::{
     Net,
     ChipStatus,
     Lane,
+    Edge,
+    NetId,
     util::{EdgeSet, LaneSet},
 };
 
+use heapless::Vec;
+
 use log::debug;
+
+const MAX_NETS: usize = 60;
 
 /// Turn given list of `nets` into connections. The connections are made by modifying the given `chip_status` (which is expected to be empty to begin with).
 ///
 /// The given `lanes` are specific to the board, and tell the algorithm how to the chips are interconnected.
 pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipStatus, lanes: &[Lane]) {
     // list of edges that need to be connected at the very end (these are for nets which are only on a single chip)
-    let mut pending_edge_nets = vec![];
+    let mut pending_edge_nets: Vec<(Edge, NetId), MAX_NETS> = Vec::new();
     // list of pairs of edges that need a bounce in between
-    let mut pending_bounces = vec![];
+    let mut pending_bounces: Vec<(Edge, Edge, NetId), MAX_NETS> = Vec::new();
 
     // set of lanes that are available
     let mut lanes = LaneSet::new(lanes);
@@ -37,7 +43,7 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
         debug!("Net {:?} has {} edges: {:?}", net.id, edges.len(), edges);
 
         if edges.len() == 1 { // single-chip net. Will be connected at the very end, using an arbitrary free lane port.
-            pending_edge_nets.push((edges.pop().unwrap(), net.id));
+            pending_edge_nets.push((edges.pop().unwrap(), net.id)).ok().unwrap();
         } else {
             let mut connected_edges = EdgeSet::empty();
 
@@ -61,7 +67,7 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
                 } else {
                     // no direct lane found, add the first pair as a bounce candidate, and try again
                     // (this will likely fail, but it's a start)
-                    pending_bounces.push((connected_edges.iter().next().unwrap(), edges.pop().unwrap(), net.id));
+                    pending_bounces.push((connected_edges.iter().next().unwrap(), edges.pop().unwrap(), net.id)).ok().unwrap();
                 }
             }
         }
@@ -75,10 +81,10 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
         let alt_edge_b = edge_b.orthogonal();
         if let Some(lane) = lanes.take(|lane| lane.connects(alt_edge_a, edge_b)) {
             chip_status.set_lane(lane, net_id);
-            pending_edge_nets.push((edge_a, net_id));
+            pending_edge_nets.push((edge_a, net_id)).ok().unwrap();
         } else if let Some(lane) = lanes.take(|lane| lane.connects(edge_a, alt_edge_b)) {
             chip_status.set_lane(lane, net_id);
-            pending_edge_nets.push((edge_b, net_id));
+            pending_edge_nets.push((edge_b, net_id)).ok().unwrap();
         } else { // bounce via orthagonal edge not possible. Try to find a path via another chip.
             todo!("Bounce from {:?} to {:?}", edge_a, edge_b);
         }

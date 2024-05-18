@@ -230,6 +230,7 @@ name = "crosspoint-matrix"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "heapless",
  "log",
 ]
 
