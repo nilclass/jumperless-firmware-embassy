@@ -253,10 +253,16 @@ mod tests {
     use super::*;
     use layout::{Layout, NodeNet, Node};
 
+    fn setup() {
+        _ = env_logger::try_init();
+    }
+
     #[test]
     /// Nets within this test are all either on the same chip, or span two chips with
     /// a direct lane between them.
     fn test_direct_routes() {
+        setup();
+
         let a = ChipId(b'A');
         let i = ChipId(b'I');
 
@@ -291,6 +297,8 @@ mod tests {
 
     #[test]
     fn test_bounce_orthogonal() {
+        setup();
+
         let a = ChipId(b'A');
         let l = ChipId(b'L');
         let net_id = 1.into();
@@ -317,6 +325,8 @@ mod tests {
     #[test]
     /// Connect all nodes on a chip to the same net
     fn test_all_nodes_on_chip_single_net() {
+        setup();
+
         let chip = ChipId(b'D');
         let net_id = 1.into();
         let x = 0; // first available lane on edge `Dx`
@@ -354,6 +364,8 @@ mod tests {
 
     #[test]
     fn test_multiple_chips() {
+        setup();
+
         let a = ChipId(b'A');
         let e = ChipId(b'E');
         let j = ChipId(b'J');
