@@ -500,8 +500,5 @@ mod tests {
     /// and all nodes within each net ordered by node number.
     fn normalize_nets(nets: &mut [NodeNet]) {
         nets.sort_by_key(|net| net.id.0);
-        for net in nets {
-            net.sort();
-        }
     }
 }

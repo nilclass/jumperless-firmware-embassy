@@ -25,10 +25,6 @@ impl NodeNet {
             nodes: net.ports.iter().filter_map(|port| layout.port_to_node(*port)).collect(),
         }
     }
-
-    pub fn sort(&mut self) {
-        //self.nodes.sort();
-    }
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -114,7 +110,6 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
             None
         }
     }
-
 }
 
 #[cfg(feature = "std")]
