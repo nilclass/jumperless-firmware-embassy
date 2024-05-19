@@ -161,14 +161,34 @@ impl<'a> LaneSet<'a> {
         None
     }
 
-    fn has_index(&self, index: usize) -> bool {
+    pub fn has_index(&self, index: usize) -> bool {
         let (i, j) = (index / 8, index % 8);
         (self.1[i] >> j) & 1 == 1
     }
 
-    fn clear_index(&mut self, index: usize) {
+    pub fn clear_index(&mut self, index: usize) {
         let (i, j) = (index / 8, index % 8);
         self.1[i] &= !(1 << j);
+    }
+
+    pub fn iter(&'a self) -> impl Iterator<Item = Lane> + 'a {
+        self.0.iter().enumerate().filter_map(|(i, lane)| {
+            if self.has_index(i) {
+                Some(*lane)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = Lane> + 'a {
+        self.0.iter().enumerate().filter_map(move |(i, lane)| {
+            if self.has_index(i) {
+                Some(*lane)
+            } else {
+                None
+            }
+        })
     }
 }
 

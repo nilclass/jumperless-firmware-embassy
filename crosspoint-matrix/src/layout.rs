@@ -5,6 +5,7 @@ pub struct NodeMapping(Node, Port);
 pub struct Layout<const NODE_COUNT: usize, const LANE_COUNT: usize> {
     pub nodes: [NodeMapping; NODE_COUNT],
     pub lanes: [Lane; LANE_COUNT],
+    port_map: PortMap,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -27,13 +28,18 @@ impl NodeNet {
 }
 
 impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_COUNT> {
+    pub fn new(nodes: [NodeMapping; NODE_COUNT], lanes: [Lane; LANE_COUNT]) -> Self {
+        let port_map = PortMap::new(&nodes, &lanes);
+        Self { nodes, lanes, port_map }
+    }
+
     pub fn nets_to_connections(&self, nets: &[NodeNet], chip_status: &mut ChipStatus) {
         super::nets_to_connections(nets.iter().map(|net| {
             Net {
                 id: net.id,
                 ports: net.nodes.iter().map(|node| self.node_to_port(*node).unwrap()).collect(),
             }
-        }), chip_status, &self.lanes)
+        }), chip_status, &self.lanes, &self.port_map)
     }
 
     pub fn node_to_port(&self, node: Node) -> Option<Port> {
@@ -41,12 +47,13 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
     }
 
     pub fn port_to_node(&self, port: Port) -> Option<Node> {
-        self.nodes.iter().find(|NodeMapping(_, p)| *p == port).map(|NodeMapping(n, _)| n).copied()
+        self.port_map.get(port).node()
     }
 
     /// If the given port is part of a lane, returns the port on the other side of that lane
     pub fn lane_destination(&self, port: Port) -> Option<Port> {
-        if let Some(Lane(a, b)) = self.lanes.iter().find(|l| l.0 == port || l.1 == port).copied() {
+        if let Some(index) = self.port_map.get(port).lane_index() {
+            let Lane(a, b) = self.lanes[index];
             if a == port {
                 Some(b)
             } else {
@@ -99,10 +106,81 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct PortUse(u8);
+
+// highest possible lane index (127) is used to indicate
+// the port is not mapped anywhere.
+const PORT_USE_NONE: u8 = 0x7F << 1;
+
+impl PortUse {
+    /// Construct PortUse pointing to nothing
+    fn new_none() -> Self {
+        Self(PORT_USE_NONE)
+    }
+
+    /// Construct PortUse pointing to a node
+    fn new_node(node: Node) -> Self {
+        Self(((node as u8) << 1) | 1)
+    }
+
+    /// Construct PortUse pointing to a lane
+    ///
+    /// (Lanes don't fit into 7 bits, so instead we keep an index into the list of lanes of the layout)
+    fn new_lane_index(index: usize) -> Self {
+        assert!(index < 0x7F);
+        Self((index as u8) << 1)
+    }
+
+    pub fn node(&self) -> Option<Node> {
+        if self.0 & 1 == 1 {
+            // Safety: values are constructed through `node as u8` in `new_node`, so only valid values exist
+            Some(unsafe { Node::from_u8(self.0 >> 1) })
+        } else {
+            None
+        }
+    }
+
+    pub fn lane_index(&self) -> Option<usize> {
+        if self.0 & 1 == 1 || self.0 == PORT_USE_NONE {
+            None
+        } else {
+            Some((self.0 >> 1) as usize)
+        }
+    }
+}
+
+pub struct PortMap([PortUse; 24 * 12]);
+
+impl PortMap {
+    pub fn new(nodes: &[NodeMapping], lanes: &[Lane]) -> Self {
+        let mut m = PortMap([PortUse::new_none(); 24 * 12]);
+        for NodeMapping(node, port) in nodes {
+            m.set(*port, PortUse::new_node(*node));
+        }
+        for (index, Lane(a, b)) in lanes.into_iter().enumerate() {
+            m.set(*a, PortUse::new_lane_index(index));
+            m.set(*b, PortUse::new_lane_index(index));
+        }
+        m
+    }
+
+    pub fn get(&self, port: Port) -> PortUse {
+        self.0[Self::address(port)]
+    }
+
+    pub fn set(&mut self, port: Port, port_use: PortUse) {
+        self.0[Self::address(port)] = port_use;
+    }
+
+    fn address(Port(chip, dimension, index): Port) -> usize {
+        chip.index() * 24 + dimension.index() * 16 + index as usize
+    }
+}
+
 impl Layout<120, 84> {
     pub fn v4() -> Self {
-        Self {
-            nodes: [
+        Self::new([
                 NodeMapping(Node::Top2, Port(ChipId(b'A'), Dimension::Y, 1)),
                 NodeMapping(Node::Top3, Port(ChipId(b'A'), Dimension::Y, 2)),
                 NodeMapping(Node::Top4, Port(ChipId(b'A'), Dimension::Y, 3)),
@@ -223,8 +301,7 @@ impl Layout<120, 84> {
                 NodeMapping(Node::RpUartRx, Port(ChipId(b'L'), Dimension::X, 13)),
                 NodeMapping(Node::Supply5V, Port(ChipId(b'L'), Dimension::X, 14)),
                 NodeMapping(Node::RpGpio0, Port(ChipId(b'L'), Dimension::X, 15)),
-            ],
-            lanes: [
+            ], [
                 Lane(Port(ChipId(b'A'), Dimension::X, 0), Port(ChipId(b'I'), Dimension::Y, 0)),
                 Lane(Port(ChipId(b'A'), Dimension::X, 1), Port(ChipId(b'J'), Dimension::Y, 0)),
                 Lane(Port(ChipId(b'A'), Dimension::X, 2), Port(ChipId(b'B'), Dimension::X, 0)),
@@ -310,7 +387,7 @@ impl Layout<120, 84> {
                 Lane(Port(ChipId(b'H'), Dimension::X, 15), Port(ChipId(b'J'), Dimension::Y, 7)),
                 Lane(Port(ChipId(b'H'), Dimension::Y, 0), Port(ChipId(b'L'), Dimension::Y, 7)),
             ],
-        }
+        )
     }
 }
 
@@ -419,6 +496,12 @@ pub enum Node {
     RpUartRx = 117,
 }
 
+impl Node {
+    unsafe fn from_u8(value: u8) -> Self {
+        core::mem::transmute(value)
+    }
+}
+
 #[derive(Debug)]
 pub struct InvalidNode;
 
@@ -523,3 +606,30 @@ impl std::str::FromStr for Node {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_port_use_none() {
+        let none = PortUse::new_none();
+        assert_eq!(none.node(), None);
+        assert_eq!(none.lane_index(), None);
+    }
+
+    #[test]
+    fn test_port_use_node() {
+        let node = PortUse::new_node(Node::Supply5V);
+        assert_eq!(node.node(), Some(Node::Supply5V));
+        assert_eq!(node.lane_index(), None);
+    }
+
+    #[test]
+    fn test_port_use_index() {
+        let lane_index = PortUse::new_lane_index(27);
+        assert_eq!(lane_index.node(), None);
+        assert_eq!(lane_index.lane_index(), Some(27));
+    }
+}
+

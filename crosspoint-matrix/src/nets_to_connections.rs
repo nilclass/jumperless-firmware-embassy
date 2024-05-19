@@ -5,6 +5,7 @@ use crate::{
     Edge,
     NetId,
     util::{EdgeSet, LaneSet},
+    layout::PortMap,
 };
 
 use heapless::Vec;
@@ -16,14 +17,14 @@ const MAX_NETS: usize = 60;
 /// Turn given list of `nets` into connections. The connections are made by modifying the given `chip_status` (which is expected to be empty to begin with).
 ///
 /// The given `lanes` are specific to the board, and tell the algorithm how to the chips are interconnected.
-pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipStatus, lanes: &[Lane]) {
+pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipStatus, layout_lanes: &[Lane], port_map: &PortMap) {
     // list of edges that need to be connected at the very end (these are for nets which are only on a single chip)
     let mut pending_edge_nets: Vec<(Edge, NetId), MAX_NETS> = Vec::new();
     // list of pairs of edges that need a bounce in between
     let mut pending_bounces: Vec<(Edge, Edge, NetId), MAX_NETS> = Vec::new();
 
-    // set of lanes that are available
-    let mut lanes = LaneSet::new(lanes);
+    // set of lanes that are available (initially all of them, we take them away as they are being assigned to nets)
+    let mut lanes = LaneSet::new(layout_lanes);
 
     // For now, just go net-by-net, in the order they are given. Later on this could become more clever and route more complex nets first.
     for net in nets {
@@ -85,9 +86,104 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
         } else if let Some(lane) = lanes.take(|lane| lane.connects(edge_a, alt_edge_b)) {
             chip_status.set_lane(lane, net_id);
             pending_edge_nets.push((edge_b, net_id)).ok().unwrap();
-        } else { // bounce via orthagonal edge not possible. Try to find a path via another chip.
-            todo!("Bounce from {:?} to {:?}", edge_a, edge_b);
+        } else {
+
+            let mut success = false;
+
+            'outer: for port in edge_a.ports() {
+                if let Some(index0) = port_map.get(port).lane_index() && lanes.has_index(index0) {
+                    let lane0 = layout_lanes[index0];
+                    // destination edge on the target chip of lane0
+                    let dest0_edge = lane0.opposite(port).edge();
+                    debug!("Candidate lane0 {} going to {:?}", index0, dest0_edge);
+
+                    // first check if there is an orthogonal lane leading to edge B
+                    for port in dest0_edge.orthogonal().ports() {
+                        if let Some(index1) = port_map.get(port).lane_index() && lanes.has_index(index1) {
+                            let lane1 = layout_lanes[index1];
+                            let dest1_edge = lane1.opposite(port).edge();
+                            debug!("  Candidate lane1 {} going to {:?} (orthogonal)", index1, dest1_edge);
+
+                            if dest1_edge == edge_b { // success!
+                                chip_status.set_lane(lane0, net_id);
+                                chip_status.set_lane(lane1, net_id);
+
+                                // mark lanes as used
+                                lanes.clear_index(index0);
+                                lanes.clear_index(index1);
+
+                                success = true;
+                                break 'outer;
+                            }
+                        }
+                    }
+
+                    // next check if there is a lane on the same edge, leading to edge B
+                    for port in dest0_edge.ports() {
+                        if let Some(index1) = port_map.get(port).lane_index() && lanes.has_index(index1) {
+                            let lane1 = layout_lanes[index1];
+                            let dest1_edge = lane1.opposite(port).edge();
+                            debug!("  Candidate lane1 {} going to {:?} (adjacent)", index1, dest1_edge);
+
+                            if dest1_edge == edge_b {
+                                // found an adjacent edge that goes to the right place.
+                                // now find an orthogonal edge to this adjacent one, to complete the bounce
+                                for port in dest0_edge.orthogonal().ports() {
+                                    if let Some(index2) = port_map.get(port).lane_index() && lanes.has_index(index2) {
+                                        let lane2 = layout_lanes[index2];
+                                        debug!("Found a path from {edge_a:?} to {edge_b:?} via {lane0:?} and {lane1:?}, with support of {lane2:?}");
+                                        chip_status.set_lane(lane0, net_id);
+                                        chip_status.set_lane(lane1, net_id);
+                                        chip_status.set_lane(lane2, net_id);
+
+                                        lanes.clear_index(index0);
+                                        lanes.clear_index(index1);
+                                        lanes.clear_index(index2);
+
+                                        success = true;
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !success {
+                panic!("No viable bounce path to connect {:?} with {:?} (net {:?})", edge_a, edge_b, net_id);
+            }
+
         }
+        // - iterate through all ports on edge A
+        // - check if the port points to a free lane:
+        //   - yes: follow!
+        //     - check if target chip has a lane to edge B on the orthogonal edge, if yes, take both lanes & by done
+        //     - otherwise check if chip has a lane to edge B on the same side *and* a free orthogonal lane slot to bounce. If yes, take all three lanes & be done
+        //   - no: continue with next one
+
+        // else if let Some(bounce_path) = lanes.find_bounce_lanes(edge_a, edge_b) {
+            
+        //     // for lane in bounce_path {
+        //     //     chip_status.set_lane(lane, net_id);
+        //     // }
+        //     // let mut candidates_a = EdgeSet::empty();
+        //     // let mut candidates_b = EdgeSet::empty();
+        //     // for Lane(port0, port1) in lanes.iter() {
+        //     //     if port0.edge() == edge_a {
+        //     //         candidates_a.insert(port1.edge());
+        //     //     } else if port1.edge() == edge_a {
+        //     //         candidates_a.insert(port0.edge());
+        //     //     } else if port0.edge() == edge_b {
+        //     //         candidates_b.insert(port1.edge());
+        //     //     } else if port1.edge() == edge_b {
+        //     //         candidates_b.insert(port0.edge());
+        //     //     }
+        //     // }
+        // } 
+        // else {
+        //     panic!("No viable bounce path to connect {:?} with {:?} (net {:?})", edge_a, edge_b, net_id);
+        // }
     }
 
     // Connect the remaining edges

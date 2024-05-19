@@ -147,6 +147,7 @@ impl Port {
 
 /// A Lane is a physical connection between two ports (on distinct chips)
 #[derive(Copy, Clone)]
+#[cfg_attr(feature = "std", derive(Debug))]
 pub struct Lane(Port, Port);
 
 impl Lane {
@@ -159,6 +160,19 @@ impl Lane {
     pub fn connects(&self, from: Edge, to: Edge) -> bool {
         let (a, b) = (self.0.edge(), self.1.edge());
         (a, b) == (from, to) || (a, b) == (to, from)
+    }
+
+    /// Given one of the ports of the lane, return the opposite one.
+    ///
+    /// Panics if the given port is not part of the lane.
+    pub fn opposite(&self, port: Port) -> Port {
+        if self.0 == port {
+            self.1
+        } else if self.1 == port {
+            self.0
+        } else {
+            panic!("Given port must be one of the endpoints of the lane");
+        }
     }
 }
 
@@ -201,7 +215,6 @@ pub fn print_crosspoints(crosspoints: impl Iterator<Item = Crosspoint>) {
     ];
 
     for crosspoint in crosspoints {
-        println!("Lookup chip {:?}", crosspoint.chip);
         let matrix = &mut matrices.iter_mut().find(|(chip, _)| *chip == crosspoint.chip).unwrap().1;
         matrix[crosspoint.y as usize][crosspoint.x as usize] = Some(crosspoint.net_id);
     }
@@ -268,7 +281,7 @@ mod tests {
     use layout::{Layout, NodeNet, Node};
 
     fn setup() {
-        _ = env_logger::try_init();
+        _ = env_logger::builder().is_test(true).try_init();
     }
 
     #[test]
@@ -333,6 +346,32 @@ mod tests {
             Crosspoint { chip: a, x: 0, y: 0, net_id }, // connect first free lane on Ax with lane to Ly
             Crosspoint { chip: a, x: 0, y: 1, net_id }, // connect the same lane on Ax with node at Ay1 (Top2)
             Crosspoint { chip: l, x: 8, y: 0, net_id }, // connect the L side of the lane with node at Lx8 (Top1)
+        ]);
+    }
+
+    #[test]
+    fn test_bounce_other_chip() {
+        setup();
+
+        let a = ChipId(b'A');
+        let b = ChipId(b'B');
+        let c = ChipId(b'C');
+
+        test_netlist(&mut [
+            // exhaust direct lanes between A and B
+            NodeNet { id: 1.into(), nodes: vec![Node::Top2, Node::Top9] },
+            NodeNet { id: 2.into(), nodes: vec![Node::Top3, Node::Top10] },
+            // this one will need to be bounced via another chip
+            NodeNet { id: 3.into(), nodes: vec![Node::Top4, Node::Top11] },
+        ], &[
+            Crosspoint { chip: a, x: 2, y: 1, net_id: 1.into() }, // Top2 to lane AB0
+            Crosspoint { chip: a, x: 3, y: 2, net_id: 2.into() }, // Top3 to lane AB1
+            Crosspoint { chip: a, x: 4, y: 3, net_id: 3.into() }, // Top4 to lane AC0
+            Crosspoint { chip: b, x: 0, y: 1, net_id: 1.into() }, // Lane AB0 to Top9
+            Crosspoint { chip: b, x: 1, y: 2, net_id: 2.into() }, // Lane AB1 to Top10
+            Crosspoint { chip: b, x: 4, y: 3, net_id: 3.into() }, // Lane BC0 to Top11
+            Crosspoint { chip: c, x: 0, y: 0, net_id: 3.into() }, // Lane AC0 to lane CL
+            Crosspoint { chip: c, x: 2, y: 0, net_id: 3.into() }, // Lane BC0 to lane CL
         ]);
     }
 
@@ -430,6 +469,8 @@ mod tests {
         // reconstruct netlist from ChipStatus, and compare it with the input
         let extracted_nets = node_nets_from_chip_status(&chip_status, &layout);
         assert_eq!(nets, &extracted_nets[..]);
+
+        print_crosspoints(chip_status.crosspoints());
 
         // verify that the ChipStatus is sound given the the list of nets.
         // this ensures that each net is fully connected (no disjoint islands)
