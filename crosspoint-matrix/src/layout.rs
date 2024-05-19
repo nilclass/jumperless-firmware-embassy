@@ -47,12 +47,12 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
     }
 
     pub fn port_to_node(&self, port: Port) -> Option<Node> {
-        self.port_map.get(port).node()
+        self.port_map.get_node(port)
     }
 
     /// If the given port is part of a lane, returns the port on the other side of that lane
     pub fn lane_destination(&self, port: Port) -> Option<Port> {
-        if let Some(index) = self.port_map.get(port).lane_index() {
+        if let Some(index) = self.port_map.get_lane_index(port) {
             let Lane(a, b) = self.lanes[index];
             if a == port {
                 Some(b)
@@ -107,13 +107,13 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
 }
 
 #[derive(Copy, Clone)]
-pub struct PortUse(u8);
+struct PortMapEntry(u8);
 
 // highest possible lane index (127) is used to indicate
 // the port is not mapped anywhere.
 const PORT_USE_NONE: u8 = 0x7F << 1;
 
-impl PortUse {
+impl PortMapEntry {
     /// Construct PortUse pointing to nothing
     fn new_none() -> Self {
         Self(PORT_USE_NONE)
@@ -132,7 +132,7 @@ impl PortUse {
         Self((index as u8) << 1)
     }
 
-    pub fn node(&self) -> Option<Node> {
+    fn node(&self) -> Option<Node> {
         if self.0 & 1 == 1 {
             // Safety: values are constructed through `node as u8` in `new_node`, so only valid values exist
             Some(unsafe { Node::from_u8(self.0 >> 1) })
@@ -141,7 +141,7 @@ impl PortUse {
         }
     }
 
-    pub fn lane_index(&self) -> Option<usize> {
+    fn lane_index(&self) -> Option<usize> {
         if self.0 & 1 == 1 || self.0 == PORT_USE_NONE {
             None
         } else {
@@ -150,27 +150,36 @@ impl PortUse {
     }
 }
 
-pub struct PortMap([PortUse; 24 * 12]);
+/// Maps every port to either a node or a lane
+pub struct PortMap([PortMapEntry; 24 * 12]);
 
 impl PortMap {
     pub fn new(nodes: &[NodeMapping], lanes: &[Lane]) -> Self {
-        let mut m = PortMap([PortUse::new_none(); 24 * 12]);
+        let mut m = PortMap([PortMapEntry::new_none(); 24 * 12]);
         for NodeMapping(node, port) in nodes {
-            m.set(*port, PortUse::new_node(*node));
+            m.set_node(*port, *node);
         }
         for (index, Lane(a, b)) in lanes.into_iter().enumerate() {
-            m.set(*a, PortUse::new_lane_index(index));
-            m.set(*b, PortUse::new_lane_index(index));
+            m.set_lane_index(*a, index);
+            m.set_lane_index(*b, index);
         }
         m
     }
 
-    pub fn get(&self, port: Port) -> PortUse {
-        self.0[Self::address(port)]
+    pub fn get_node(&self, port: Port) -> Option<Node> {
+        self.0[Self::address(port)].node()
     }
 
-    pub fn set(&mut self, port: Port, port_use: PortUse) {
-        self.0[Self::address(port)] = port_use;
+    pub fn get_lane_index(&self, port: Port) -> Option<usize> {
+        self.0[Self::address(port)].lane_index()
+    }
+
+    pub fn set_node(&mut self, port: Port, node: Node) {
+        self.0[Self::address(port)] = PortMapEntry::new_node(node);
+    }
+
+    pub fn set_lane_index(&mut self, port: Port, index: usize) {
+        self.0[Self::address(port)] = PortMapEntry::new_lane_index(index);
     }
 
     fn address(Port(chip, dimension, index): Port) -> usize {
@@ -613,21 +622,21 @@ mod tests {
 
     #[test]
     fn test_port_use_none() {
-        let none = PortUse::new_none();
+        let none = PortMapEntry::new_none();
         assert_eq!(none.node(), None);
         assert_eq!(none.lane_index(), None);
     }
 
     #[test]
     fn test_port_use_node() {
-        let node = PortUse::new_node(Node::Supply5V);
+        let node = PortMapEntry::new_node(Node::Supply5V);
         assert_eq!(node.node(), Some(Node::Supply5V));
         assert_eq!(node.lane_index(), None);
     }
 
     #[test]
     fn test_port_use_index() {
-        let lane_index = PortUse::new_lane_index(27);
+        let lane_index = PortMapEntry::new_lane_index(27);
         assert_eq!(lane_index.node(), None);
         assert_eq!(lane_index.lane_index(), Some(27));
     }
