@@ -51,7 +51,7 @@ impl ChipStatus {
     /// Panics if the port is already assigned to a different net.
     pub fn set(&mut self, port: Port, net: NetId) {
         if let Some(existing) = self.get(port) {
-            panic!("Already set: {:?}, have {:?}, want {:?}", port, existing, net);
+            panic!("Port already set");
         }
 
         let entry = &mut self.0[port.0.index()];
@@ -96,7 +96,7 @@ impl ChipStatus {
     ///
     /// Once the walk finds no more paths to follow, we compare the set of ports that were visited by the walk with the set of required ones collected earlier.
     /// If all of the required ports have been visited, then all of them must be connected by at least one path.
-    #[allow(unused)]
+    #[cfg(feature = "std")]
     pub(crate) fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(&self, net_id: NetId, layout: &layout::Layout<NODE_COUNT, LANE_COUNT>) {
         // println!("Check connectivity of net {:?}", net_id);
         // contains every port that this net must contain (those that resolve to Nodes)

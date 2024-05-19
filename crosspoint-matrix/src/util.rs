@@ -129,6 +129,7 @@ impl EdgeSet {
     }
 }
 
+#[cfg(feature="std")]
 impl core::fmt::Debug for EdgeSet {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.iter().fold(

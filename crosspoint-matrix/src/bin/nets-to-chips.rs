@@ -23,7 +23,7 @@ fn main() {
 
     let mut chip_status = ChipStatus::default();
 
-    layout.nets_to_connections(&nets, &mut chip_status);
+    layout.nets_to_connections(&nets, &mut chip_status).unwrap();
 
     let crosspoint_config: CrosspointConfig = chip_status.crosspoints().collect();
 

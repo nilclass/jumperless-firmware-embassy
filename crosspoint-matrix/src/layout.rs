@@ -8,7 +8,8 @@ pub struct Layout<const NODE_COUNT: usize, const LANE_COUNT: usize> {
     pub port_map: PortMap,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(Debug))]
 pub struct Net {
     pub id: NetId,
     pub nodes: NodeSet,
@@ -86,8 +87,8 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
         Self { nodes, lanes, port_map }
     }
 
-    pub fn nets_to_connections(&self, nets: &[Net], chip_status: &mut ChipStatus) {
-        super::nets_to_connections(nets.into_iter(), chip_status, &self);
+    pub fn nets_to_connections(&self, nets: &[Net], chip_status: &mut ChipStatus) -> Result<(), super::nets_to_connections::Error> {
+        super::nets_to_connections(nets.into_iter(), chip_status, &self)
     }
 
     pub fn node_to_port(&self, node: Node) -> Option<Port> {

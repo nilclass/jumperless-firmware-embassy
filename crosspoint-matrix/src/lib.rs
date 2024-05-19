@@ -463,7 +463,7 @@ mod tests {
 
         // create chip status from netlist
         let mut chip_status = ChipStatus::default();
-        layout.nets_to_connections(nets, &mut chip_status);
+        layout.nets_to_connections(nets, &mut chip_status).unwrap();
 
         print_crosspoints(chip_status.crosspoints());
 
