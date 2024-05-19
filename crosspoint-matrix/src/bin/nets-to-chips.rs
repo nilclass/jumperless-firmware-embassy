@@ -3,12 +3,12 @@ use std::{env::args, process::exit};
 use crosspoint_matrix::{
     ChipStatus,
     CrosspointConfig,
-    layout::{Layout, NodeNet},
+    layout::{Layout, Net},
 };
 
 fn main() {
     let nets: Vec<_> = args().skip(1).enumerate().map(|(i, arg)| {
-        NodeNet {
+        Net {
             id: (i as u8 + 1).into(),
             nodes: arg.split(",").map(|part| part.parse().expect("invalid node")).collect(),
         }

@@ -1,7 +1,6 @@
 use crate::{
     ChipId,
     NetId,
-    Net,
     Dimension,
     Port,
     Crosspoint,
@@ -229,28 +228,28 @@ enum Visit {
     MarkAndFollow(Port),
 }
 
-#[cfg(feature = "std")]
-impl From<&ChipStatus> for Vec<Net> {
-    fn from(value: &ChipStatus) -> Self {
-        use std::collections::HashMap;
+// #[cfg(feature = "std")]
+// impl From<&ChipStatus> for Vec<Net> {
+//     fn from(value: &ChipStatus) -> Self {
+//         use std::collections::HashMap;
 
-        let mut nets: HashMap<NetId, Net> = HashMap::new();
-        for (chip_index, chip) in value.0.iter().enumerate() {
-            for (i, x) in chip.x.iter().enumerate() {
-                if let Some(net_id) = x {
-                    nets.entry(*net_id).or_insert(Net { id: *net_id, ports: vec![] }).ports.push(Port(ChipId::from_index(chip_index), Dimension::X, i as u8));
-                }
-            }
+//         let mut nets: HashMap<NetId, Net> = HashMap::new();
+//         for (chip_index, chip) in value.0.iter().enumerate() {
+//             for (i, x) in chip.x.iter().enumerate() {
+//                 if let Some(net_id) = x {
+//                     nets.entry(*net_id).or_insert(Net { id: *net_id, ports: vec![] }).ports.push(Port(ChipId::from_index(chip_index), Dimension::X, i as u8));
+//                 }
+//             }
 
-            for (i, y) in chip.y.iter().enumerate() {
-                if let Some(net_id) = y {
-                    nets.entry(*net_id).or_insert(Net { id: *net_id, ports: vec![] }).ports.push(Port(ChipId::from_index(chip_index), Dimension::Y, i as u8));
-                }
-            }
-        }
-        nets.into_values().collect()
-    }
-}
+//             for (i, y) in chip.y.iter().enumerate() {
+//                 if let Some(net_id) = y {
+//                     nets.entry(*net_id).or_insert(Net { id: *net_id, ports: vec![] }).ports.push(Port(ChipId::from_index(chip_index), Dimension::Y, i as u8));
+//                 }
+//             }
+//         }
+//         nets.into_values().collect()
+//     }
+// }
 
 /// Iterator over all connected crosspoints
 ///

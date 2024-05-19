@@ -43,7 +43,7 @@ impl ChipId {
 
     /// Construct ChipId from given index
     ///
-    /// The index must be in the 0..=11 range.
+    /// The index must be in the 0..=11 range. 0 is chip A, 11 is chip L.
     pub fn from_index(index: usize) -> Self {
         assert!(index < 12);
         Self(b'A' + index as u8)
@@ -142,6 +142,15 @@ impl Port {
     pub fn edge(&self) -> Edge {
         Edge(self.0, self.1)
     }
+
+    pub fn all() -> impl Iterator<Item = Port> {
+        (0..12).flat_map(|chip_index| {
+            let chip = ChipId::from_index(chip_index);
+            let xs = (0..16).map(move |x_index| Port(chip, Dimension::X, x_index));
+            let ys = (0..8).map(move |y_index| Port(chip, Dimension::Y, y_index));
+            xs.chain(ys)
+        })
+    }
 }
 
 
@@ -184,16 +193,6 @@ pub struct Crosspoint {
     pub net_id: NetId,
     pub x: u8,
     pub y: u8,
-}
-
-/// A net is a collection of Ports which are supposed to be interconnected.
-///
-/// The routing code does not know (or care) about nodes, just about ports.
-/// The `layout` module provides a `NodeNet` type, which represents a net in terms of nodes.
-/// A board-specific layout converts between the two.
-pub struct Net {
-    id: NetId,
-    ports: Vec<Port>,
 }
 
 #[cfg(feature = "std")]
@@ -278,7 +277,7 @@ impl CrosspointConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use layout::{Layout, NodeNet, Node};
+    use layout::{Layout, Net, Node};
 
     fn setup() {
         _ = env_logger::builder().is_test(true).try_init();
@@ -295,7 +294,7 @@ mod tests {
 
         test_netlist(&mut [
             // two nodes, on different chips
-            NodeNet {
+            Net {
                 id: 1.into(),
                 nodes: vec![
                     // Ix15
@@ -305,7 +304,7 @@ mod tests {
                 ].into_iter().collect(),
             },
             // single chip
-            NodeNet {
+            Net {
                 id: 2.into(),
                 nodes: vec![
                     // Ay6
@@ -333,7 +332,7 @@ mod tests {
         test_netlist(&mut [
             // Just two chips are involved here, but there is no direct lane to connect them.
             // There is a connection between chip A and chip L though, using Ay0.
-            NodeNet {
+            Net {
                 id: 1.into(),
                 nodes: vec![
                     // Lx8
@@ -359,10 +358,10 @@ mod tests {
 
         test_netlist(&mut [
             // exhaust direct lanes between A and B
-            NodeNet { id: 1.into(), nodes: vec![Node::Top2, Node::Top9].into_iter().collect() },
-            NodeNet { id: 2.into(), nodes: vec![Node::Top3, Node::Top10].into_iter().collect() },
+            Net { id: 1.into(), nodes: vec![Node::Top2, Node::Top9].into_iter().collect() },
+            Net { id: 2.into(), nodes: vec![Node::Top3, Node::Top10].into_iter().collect() },
             // this one will need to be bounced via another chip
-            NodeNet { id: 3.into(), nodes: vec![Node::Top4, Node::Top11].into_iter().collect() },
+            Net { id: 3.into(), nodes: vec![Node::Top4, Node::Top11].into_iter().collect() },
         ], &[
             Crosspoint { chip: a, x: 2, y: 1, net_id: 1.into() }, // Top2 to lane AB0
             Crosspoint { chip: a, x: 3, y: 2, net_id: 2.into() }, // Top3 to lane AB1
@@ -385,7 +384,7 @@ mod tests {
         let x = 0; // first available lane on edge `Dx`
 
         test_netlist(&mut [
-            NodeNet {
+            Net {
                 id: 1.into(),
                 nodes: vec![
                     // Dy1
@@ -426,7 +425,7 @@ mod tests {
 
         test_netlist(&mut [
             // two nodes on the same chip, two other nodes on other chips each
-            NodeNet {
+            Net {
                 id: 1.into(),
                 nodes: vec![
                     // Jx14
@@ -455,7 +454,7 @@ mod tests {
         ]);
     }
 
-    fn test_netlist(nets: &mut [NodeNet], expected_crosspoints: &[Crosspoint]) {
+    fn test_netlist(nets: &mut [Net], expected_crosspoints: &[Crosspoint]) {
         // normalize nets, to make it comparisons easier
         normalize_nets(nets);
 
@@ -466,11 +465,11 @@ mod tests {
         let mut chip_status = ChipStatus::default();
         layout.nets_to_connections(nets, &mut chip_status);
 
+        print_crosspoints(chip_status.crosspoints());
+
         // reconstruct netlist from ChipStatus, and compare it with the input
         let extracted_nets = node_nets_from_chip_status(&chip_status, &layout);
         assert_eq!(nets, &extracted_nets[..]);
-
-        print_crosspoints(chip_status.crosspoints());
 
         // verify that the ChipStatus is sound given the the list of nets.
         // this ensures that each net is fully connected (no disjoint islands)
@@ -481,24 +480,32 @@ mod tests {
         assert_eq!(&crosspoints[..], expected_crosspoints);
     }
 
-    fn node_nets_from_chip_status<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, layout: &Layout<NODE_COUNT, LANE_COUNT>) -> Vec<NodeNet> {
-        let nets: Vec<Net> = chip_status.into();
-        let mut converted: Vec<NodeNet> = nets.into_iter().map(|net| NodeNet::from_net(&net, layout)).collect();
-        normalize_nets(&mut converted);
-        converted
+    fn node_nets_from_chip_status<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, layout: &Layout<NODE_COUNT, LANE_COUNT>) -> Vec<Net> {
+        let mut nets = std::collections::HashMap::new();
+        for port in Port::all() {
+            if let Some(net_id) = chip_status.get(port) {
+                if let Some(node) = layout.port_to_node(port) {
+                    nets.entry(net_id).or_insert(Net::new(net_id)).nodes.insert(node);
+                }
+            }
+        }
+
+        let mut nets: Vec<Net> = nets.into_values().collect();
+        normalize_nets(&mut nets);
+        nets
     }
 
-    fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, nets: &[NodeNet], layout: &Layout<NODE_COUNT, LANE_COUNT>) {
+    fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(chip_status: &ChipStatus, nets: &[Net], layout: &Layout<NODE_COUNT, LANE_COUNT>) {
         for net in nets {
             chip_status.check_connectivity(net.id, layout);
         }
     }
 
-    /// Normalizes a list of NodeNets to ease comparison
+    /// Normalizes a list of Nets to ease comparison
     ///
     /// A normalized netlist has all nets ordered by ID,
     /// and all nodes within each net ordered by node number.
-    fn normalize_nets(nets: &mut [NodeNet]) {
+    fn normalize_nets(nets: &mut [Net]) {
         nets.sort_by_key(|net| net.id.0);
     }
 }

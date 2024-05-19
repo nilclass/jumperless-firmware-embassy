@@ -1,33 +1,30 @@
-use crate::{Port, Lane, ChipId, Dimension, Net, ChipStatus, NetId, util::PortSet};
+use crate::{Port, Lane, ChipId, Dimension, ChipStatus, NetId, util::PortSet};
 
 pub struct NodeMapping(Node, Port);
 
 pub struct Layout<const NODE_COUNT: usize, const LANE_COUNT: usize> {
     pub nodes: [NodeMapping; NODE_COUNT],
     pub lanes: [Lane; LANE_COUNT],
-    port_map: PortMap,
+    pub port_map: PortMap,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct NodeNet {
+pub struct Net {
     pub id: NetId,
     pub nodes: NodeSet,
 }
 
-impl NodeNet {
+impl Net {
+    pub fn new(id: NetId) -> Self {
+        Self { id, nodes: NodeSet::new() }
+    }
+
     pub fn from_iter(id: NetId, nodes: impl Iterator<Item = Node>) -> Self {
         Self { id, nodes: nodes.collect() }
     }
-
-    pub fn from_net<const NODE_COUNT: usize, const LANE_COUNT: usize>(net: &Net, layout: &Layout<NODE_COUNT, LANE_COUNT>) -> Self {
-        Self {
-            id: net.id,
-            nodes: net.ports.iter().filter_map(|port| layout.port_to_node(*port)).collect(),
-        }
-    }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq)]
 pub struct NodeSet([u8; 16]);
 
 impl NodeSet {
@@ -74,19 +71,23 @@ impl FromIterator<Node> for NodeSet {
     }
 }
 
+impl core::fmt::Debug for NodeSet {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.iter().fold(
+            &mut f.debug_list(),
+            |list, node| list.entry(&node),
+        ).finish()
+    }
+}
+
 impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_COUNT> {
     pub fn new(nodes: [NodeMapping; NODE_COUNT], lanes: [Lane; LANE_COUNT]) -> Self {
         let port_map = PortMap::new(&nodes, &lanes);
         Self { nodes, lanes, port_map }
     }
 
-    pub fn nets_to_connections(&self, nets: &[NodeNet], chip_status: &mut ChipStatus) {
-        super::nets_to_connections(nets.iter().map(|net| {
-            Net {
-                id: net.id,
-                ports: net.nodes.iter().map(|node| self.node_to_port(node).unwrap()).collect(),
-            }
-        }), chip_status, &self.lanes, &self.port_map)
+    pub fn nets_to_connections(&self, nets: &[Net], chip_status: &mut ChipStatus) {
+        super::nets_to_connections(nets.into_iter(), chip_status, &self);
     }
 
     pub fn node_to_port(&self, node: Node) -> Option<Port> {
@@ -95,6 +96,10 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
 
     pub fn port_to_node(&self, port: Port) -> Option<Node> {
         self.port_map.get_node(port)
+    }
+
+    pub fn port_to_lane(&self, port: Port) -> Option<Lane> {
+        self.port_map.get_lane_index(port).map(move |index| self.lanes[index])
     }
 
     /// If the given port is part of a lane, returns the port on the other side of that lane

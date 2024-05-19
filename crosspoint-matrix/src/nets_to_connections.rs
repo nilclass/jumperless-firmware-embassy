@@ -1,11 +1,9 @@
 use crate::{
-    Net,
     ChipStatus,
-    Lane,
     Edge,
     NetId,
     util::{EdgeSet, LaneSet},
-    layout::PortMap,
+    layout::{Layout, Net},
 };
 
 use heapless::Vec;
@@ -16,24 +14,30 @@ const MAX_NETS: usize = 60;
 
 /// Turn given list of `nets` into connections. The connections are made by modifying the given `chip_status` (which is expected to be empty to begin with).
 ///
-/// The given `lanes` are specific to the board, and tell the algorithm how to the chips are interconnected.
-pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut ChipStatus, layout_lanes: &[Lane], port_map: &PortMap) {
+/// The layout is used to map nodes to ports and to locate lanes between chips.
+pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>(
+    nets: impl Iterator<Item = &'a Net>,
+    chip_status: &mut ChipStatus,
+    layout: &Layout<NODE_COUNT, LANE_COUNT>,
+) {
     // list of edges that need to be connected at the very end (these are for nets which are only on a single chip)
     let mut pending_edge_nets: Vec<(Edge, NetId), MAX_NETS> = Vec::new();
     // list of pairs of edges that need a bounce in between
     let mut pending_bounces: Vec<(Edge, Edge, NetId), MAX_NETS> = Vec::new();
 
     // set of lanes that are available (initially all of them, we take them away as they are being assigned to nets)
-    let mut lanes = LaneSet::new(layout_lanes);
+    let mut lanes = LaneSet::new(&layout.lanes);
 
     // For now, just go net-by-net, in the order they are given. Later on this could become more clever and route more complex nets first.
     for net in nets {
-        debug!("Ports: {:?}", net.ports);
+        debug!("Nodes: {:?}", net.nodes);
 
         // set of edges that need to be connected to satisfy the net
         let mut edges = EdgeSet::empty();
 
-        for port in net.ports {
+        for node in net.nodes.iter() {
+            let port = layout.node_to_port(node).unwrap();
+
             // mark each port as belonging to this net
             chip_status.set(port, net.id);
 
@@ -91,16 +95,16 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
             let mut success = false;
 
             'outer: for port in edge_a.ports() {
-                if let Some(index0) = port_map.get_lane_index(port) && lanes.has_index(index0) {
-                    let lane0 = layout_lanes[index0];
+                if let Some(index0) = layout.port_map.get_lane_index(port) && lanes.has_index(index0) {
+                    let lane0 = layout.lanes[index0];
                     // destination edge on the target chip of lane0
                     let dest0_edge = lane0.opposite(port).edge();
                     debug!("Candidate lane0 {} going to {:?}", index0, dest0_edge);
 
                     // first check if there is an orthogonal lane leading to edge B
                     for port in dest0_edge.orthogonal().ports() {
-                        if let Some(index1) = port_map.get_lane_index(port) && lanes.has_index(index1) {
-                            let lane1 = layout_lanes[index1];
+                        if let Some(index1) = layout.port_map.get_lane_index(port) && lanes.has_index(index1) {
+                            let lane1 = layout.lanes[index1];
                             let dest1_edge = lane1.opposite(port).edge();
                             debug!("  Candidate lane1 {} going to {:?} (orthogonal)", index1, dest1_edge);
 
@@ -120,8 +124,8 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
 
                     // next check if there is a lane on the same edge, leading to edge B
                     for port in dest0_edge.ports() {
-                        if let Some(index1) = port_map.get_lane_index(port) && lanes.has_index(index1) {
-                            let lane1 = layout_lanes[index1];
+                        if let Some(index1) = layout.port_map.get_lane_index(port) && lanes.has_index(index1) {
+                            let lane1 = layout.lanes[index1];
                             let dest1_edge = lane1.opposite(port).edge();
                             debug!("  Candidate lane1 {} going to {:?} (adjacent)", index1, dest1_edge);
 
@@ -129,8 +133,8 @@ pub fn nets_to_connections(nets: impl Iterator<Item = Net>, chip_status: &mut Ch
                                 // found an adjacent edge that goes to the right place.
                                 // now find an orthogonal edge to this adjacent one, to complete the bounce
                                 for port in dest0_edge.orthogonal().ports() {
-                                    if let Some(index2) = port_map.get_lane_index(port) && lanes.has_index(index2) {
-                                        let lane2 = layout_lanes[index2];
+                                    if let Some(index2) = layout.port_map.get_lane_index(port) && lanes.has_index(index2) {
+                                        let lane2 = layout.lanes[index2];
                                         debug!("Found a path from {edge_a:?} to {edge_b:?} via {lane0:?} and {lane1:?}, with support of {lane2:?}");
                                         chip_status.set_lane(lane0, net_id);
                                         chip_status.set_lane(lane1, net_id);
