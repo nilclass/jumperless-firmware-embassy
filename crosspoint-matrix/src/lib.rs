@@ -302,7 +302,7 @@ mod tests {
                     Node::Gnd,
                     // Ay1
                     Node::Top2,
-                ],
+                ].into_iter().collect(),
             },
             // single chip
             NodeNet {
@@ -312,7 +312,7 @@ mod tests {
                     Node::Top7,
                     // Ay7
                     Node::Top8,
-                ],
+                ].into_iter().collect(),
             },
         ], &[
             Crosspoint { chip: a, x: 0, y: 1, net_id: 1.into() }, // hook up Ay1 to lane leading to Iy0
@@ -340,7 +340,7 @@ mod tests {
                     Node::Top1,
                     // Ay1
                     Node::Top2,
-                ],
+                ].into_iter().collect(),
             },
         ], &[
             Crosspoint { chip: a, x: 0, y: 0, net_id }, // connect first free lane on Ax with lane to Ly
@@ -359,10 +359,10 @@ mod tests {
 
         test_netlist(&mut [
             // exhaust direct lanes between A and B
-            NodeNet { id: 1.into(), nodes: vec![Node::Top2, Node::Top9] },
-            NodeNet { id: 2.into(), nodes: vec![Node::Top3, Node::Top10] },
+            NodeNet { id: 1.into(), nodes: vec![Node::Top2, Node::Top9].into_iter().collect() },
+            NodeNet { id: 2.into(), nodes: vec![Node::Top3, Node::Top10].into_iter().collect() },
             // this one will need to be bounced via another chip
-            NodeNet { id: 3.into(), nodes: vec![Node::Top4, Node::Top11] },
+            NodeNet { id: 3.into(), nodes: vec![Node::Top4, Node::Top11].into_iter().collect() },
         ], &[
             Crosspoint { chip: a, x: 2, y: 1, net_id: 1.into() }, // Top2 to lane AB0
             Crosspoint { chip: a, x: 3, y: 2, net_id: 2.into() }, // Top3 to lane AB1
@@ -402,7 +402,7 @@ mod tests {
                     Node::Top28,
                     // Dy7
                     Node::Top29,
-                ],
+                ].into_iter().collect(),
             },
         ], &[
             Crosspoint { chip, net_id, x, y: 1 },
@@ -437,7 +437,7 @@ mod tests {
                     Node::Top4,
                     // Ey4
                     Node::Bottom5,
-                ],
+                ].into_iter().collect(),
             },
         ], &[
             // lane to J, with node top3

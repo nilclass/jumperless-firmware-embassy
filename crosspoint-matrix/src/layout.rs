@@ -11,10 +11,14 @@ pub struct Layout<const NODE_COUNT: usize, const LANE_COUNT: usize> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct NodeNet {
     pub id: NetId,
-    pub nodes: Vec<Node>,
+    pub nodes: NodeSet,
 }
 
 impl NodeNet {
+    pub fn from_iter(id: NetId, nodes: impl Iterator<Item = Node>) -> Self {
+        Self { id, nodes: nodes.collect() }
+    }
+
     pub fn from_net<const NODE_COUNT: usize, const LANE_COUNT: usize>(net: &Net, layout: &Layout<NODE_COUNT, LANE_COUNT>) -> Self {
         Self {
             id: net.id,
@@ -23,7 +27,54 @@ impl NodeNet {
     }
 
     pub fn sort(&mut self) {
-        self.nodes.sort();
+        //self.nodes.sort();
+    }
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct NodeSet([u8; 16]);
+
+impl NodeSet {
+    pub fn new() -> Self {
+        Self([0; 16])
+    }
+
+    pub fn insert(&mut self, node: Node) {
+        let (i, j) = Self::address(node);
+        self.0[i] |= 1 << j;
+    }
+
+    pub fn remove(&mut self, node: Node) {
+        let (i, j) = Self::address(node);
+        self.0[i] &= !(1 << j);
+    }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Node> + 'a {
+        (0..16).flat_map(move |i| {
+            (0..8).filter_map(move |j| {
+                if (self.0[i] >> j) & 1 == 1 {
+                    // Safety: bits in this set are only set by `insert`, which takes a valid `Node`
+                    Some(unsafe { Node::from_u8((i * 8 + j) as u8) })
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
+    fn address(node: Node) -> (usize, usize) {
+        let value = node as u8 as usize;
+        (value / 8, value % 8)
+    }
+}
+
+impl FromIterator<Node> for NodeSet {
+    fn from_iter<T: IntoIterator<Item = Node>>(iter: T) -> Self {
+        let mut set = NodeSet::new();
+        for node in iter {
+            set.insert(node);
+        }
+        set
     }
 }
 
@@ -37,7 +88,7 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
         super::nets_to_connections(nets.iter().map(|net| {
             Net {
                 id: net.id,
-                ports: net.nodes.iter().map(|node| self.node_to_port(*node).unwrap()).collect(),
+                ports: net.nodes.iter().map(|node| self.node_to_port(node).unwrap()).collect(),
             }
         }), chip_status, &self.lanes, &self.port_map)
     }
@@ -114,17 +165,17 @@ struct PortMapEntry(u8);
 const PORT_USE_NONE: u8 = 0x7F << 1;
 
 impl PortMapEntry {
-    /// Construct PortUse pointing to nothing
+    /// Construct entry pointing to nothing
     fn new_none() -> Self {
         Self(PORT_USE_NONE)
     }
 
-    /// Construct PortUse pointing to a node
+    /// Construct entry pointing to a node
     fn new_node(node: Node) -> Self {
         Self(((node as u8) << 1) | 1)
     }
 
-    /// Construct PortUse pointing to a lane
+    /// Construct entry pointing to a lane
     ///
     /// (Lanes don't fit into 7 bits, so instead we keep an index into the list of lanes of the layout)
     fn new_lane_index(index: usize) -> Self {
@@ -132,6 +183,7 @@ impl PortMapEntry {
         Self((index as u8) << 1)
     }
 
+    /// Retrieve node that this entry points to
     fn node(&self) -> Option<Node> {
         if self.0 & 1 == 1 {
             // Safety: values are constructed through `node as u8` in `new_node`, so only valid values exist
@@ -151,6 +203,9 @@ impl PortMapEntry {
 }
 
 /// Maps every port to either a node or a lane
+///
+/// Nodes are held by the map directly, while for lanes only the index is stored.
+/// Thus a PortMap is only valid in conjunction with the lanes of the layout that it was constructed from.
 pub struct PortMap([PortMapEntry; 24 * 12]);
 
 impl PortMap {
