@@ -565,6 +565,37 @@ impl Node {
     unsafe fn from_u8(value: u8) -> Self {
         core::mem::transmute(value)
     }
+
+    pub fn pixel(&self) -> Option<u8> {
+        use Node::*;
+        if *self as u8 <= 60 { // breadboard node
+            return Some(*self as u8 - 1);
+        }
+        match self {
+            NanoD0 => Some(81),
+            NanoD1 => Some(80),
+            NanoD2 => Some(84),
+            NanoD3 => Some(85),
+            NanoD4 => Some(86),
+            NanoD5 => Some(87),
+            NanoD8 => Some(88),
+            NanoD9 => Some(89),
+            NanoD10 => Some(90),
+            NanoD11 => Some(91),
+            NanoD12 => Some(92),
+            NanoReset => Some(93),
+            NanoAref => Some(94),
+            NanoA0 => Some(95),
+            NanoA1 => Some(82),
+            NanoA2 => Some(97),
+            NanoA3 => Some(98),
+            NanoA4 => Some(99),
+            NanoA5 => Some(100),
+            NanoA6 => Some(101),
+            NanoA7 => Some(102),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]

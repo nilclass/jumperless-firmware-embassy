@@ -872,6 +872,7 @@ dependencies = [
  "fixed",
  "fixed-macro",
  "heapless",
+ "jumperless-common",
  "line_buffer",
  "log",
  "micromath",

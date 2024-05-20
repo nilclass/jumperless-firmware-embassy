@@ -45,3 +45,4 @@ nom = { version = "7.1.3", default-features = false }
 
 
 line_buffer = { path = "../line_buffer" }
+jumperless-common = { path = "../jumperless-common" }

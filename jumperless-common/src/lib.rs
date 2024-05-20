@@ -88,6 +88,16 @@ impl From<u8> for NetId {
     }
 }
 
+impl NetId {
+    pub fn index(&self) -> usize {
+        self.0.get() as usize - 1
+    }
+
+    pub fn from_index(index: usize) -> Self {
+        Self(NonZeroU8::new(index as u8 + 1).unwrap())
+    }
+}
+
 /// Either X or Y. Used to specify ports and edges.
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(Debug))]

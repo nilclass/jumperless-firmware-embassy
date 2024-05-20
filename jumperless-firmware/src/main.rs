@@ -24,13 +24,10 @@ pub mod ch446q;
 /// LED functionality / hardware integration (WS2812 driver)
 pub mod leds;
 
-pub mod chips;
 pub mod nets;
 
 /// USB-serial based shell
 pub mod shell;
-
-pub mod crosspoint;
 
 /// The bus routes messages to one of the top-level tasks
 ///
@@ -148,6 +145,11 @@ async fn main(spawner: Spawner) {
         .unwrap();
     defmt::info!("Spawning task: leds");
     spawner.spawn(task::leds::main(leds)).unwrap();
+
+    defmt::info!("Spawning task: nets_to_chips");
+    spawner
+        .spawn(task::nets_to_chips::main(ch446q))
+        .unwrap();
 
     // Initialize USB driver
     let usb_driver = usb::Driver::new(p.USB, Irqs);

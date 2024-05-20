@@ -144,15 +144,15 @@ impl<'d, P: Instance, const S: usize, const N: usize> Leds<'d, P, S, N> {
     pub async fn update_from_nets(&mut self, nets: &Nets) {
         self.words.fill(0);
         for net in &nets.nets {
-            for node in &net.nodes {
+            for node in net.nodes.iter() {
                 if let Some(pixel) = node.pixel() {
-                    self.set_rgb8(pixel as usize, net.color);
+                    self.set_rgb8(pixel as usize, nets.color(net.id));
                 }
             }
         }
-        let gnd = nets.nets[0].color;
-        let v5 = nets.nets[1].color;
-        let v33 = nets.nets[2].color;
+        let gnd = nets.color(nets.nets[0].id);
+        let v5 = nets.color(nets.nets[1].id);
+        let v33 = nets.color(nets.nets[2].id);
 
         for i in 80..=109 {
             self.set_rgb8(i, (0x02, 0x00, 0x08)); // headerglow

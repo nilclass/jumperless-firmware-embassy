@@ -11,6 +11,7 @@ use embassy_rp::{
 use embassy_time::Timer;
 use fixed::traits::ToFixed;
 use pio::{InstructionOperands, SetDestination};
+use jumperless_common::{ChipId, Crosspoint};
 
 pub struct Ch446q<'d, P: Instance, const S: usize> {
     dma: PeripheralRef<'d, AnyChannel>,
@@ -117,12 +118,12 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
         self.reset.set_low();
     }
 
-    pub fn set_chip(&mut self, chip: Chip) {
+    pub fn set_chip(&mut self, chip: ChipId) {
         // wait for TX queue to empty
         while !self.sm.tx().empty() {}
         // disable state machine, while modifying config
         self.sm.set_enable(false);
-        let pin = &self.cs_pins[chip as u8 as usize];
+        let pin = &self.cs_pins[chip.index()];
         // use correct CS pin for SET instructions
         self.config.set_set_pins(&[pin]);
         // apply configuration
@@ -140,67 +141,6 @@ impl<'d, P: Instance, const S: usize> Ch446q<'d, P, S> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-#[repr(u8)]
-pub enum Chip {
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
-    H,
-    I,
-    J,
-    K,
-    L,
-}
-
-pub struct InvalidChip;
-
-impl TryFrom<char> for Chip {
-    type Error = InvalidChip;
-
-    fn try_from(value: char) -> Result<Self, Self::Error> {
-        match value {
-            'A' => Ok(Chip::A),
-            'B' => Ok(Chip::B),
-            'C' => Ok(Chip::C),
-            'D' => Ok(Chip::D),
-            'E' => Ok(Chip::E),
-            'F' => Ok(Chip::F),
-            'G' => Ok(Chip::G),
-            'H' => Ok(Chip::H),
-            'I' => Ok(Chip::I),
-            'J' => Ok(Chip::J),
-            'K' => Ok(Chip::K),
-            'L' => Ok(Chip::L),
-            _ => Err(InvalidChip),
-        }
-    }
-}
-
-impl From<usize> for Chip {
-    fn from(value: usize) -> Self {
-        match value {
-            0 => Chip::A,
-            1 => Chip::B,
-            2 => Chip::C,
-            3 => Chip::D,
-            4 => Chip::E,
-            5 => Chip::F,
-            6 => Chip::G,
-            7 => Chip::H,
-            8 => Chip::I,
-            9 => Chip::J,
-            10 => Chip::K,
-            11 => Chip::L,
-            _ => defmt::panic!("Invalid chip"),
-        }
-    }
-}
-
 pub struct Packet(u8);
 
 impl Packet {
@@ -212,6 +152,12 @@ impl Packet {
 impl From<Packet> for u32 {
     fn from(val: Packet) -> Self {
         (val.0 as u32) << 24
+    }
+}
+
+impl From<Crosspoint> for Packet {
+    fn from(val: Crosspoint) -> Self {
+        Self::new(val.x, val.y, true)
     }
 }
 
