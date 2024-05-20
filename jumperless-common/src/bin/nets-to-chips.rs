@@ -1,6 +1,6 @@
 use std::{env::args, process::exit};
 
-use crosspoint_matrix::{
+use jumperless_common::{
     ChipStatus,
     CrosspointConfig,
     layout::{Layout, Net},

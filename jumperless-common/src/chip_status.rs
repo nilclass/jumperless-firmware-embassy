@@ -13,12 +13,12 @@ use crate::{
 ///
 /// This is an intermediate structure, used to build chip connections from netlists.
 ///
-/// By default all ports are unassigned. To assign a net id to one or two ports, `set` and `set_lane` are called.
+/// By default all ports are unassigned. To assign a net id to one or two ports, [`ChipStatus::set`] and [`ChipStatus::set_lane`] are called.
 ///
-/// A given port can only be set once (reassigning causes a panic). This ensures that nets are not accidentally connected
+/// A given port can only be set once (reassigning causes a panic). This ensures that distinct nets are not accidentally connected
 /// by accident, due to bugs in the routing code.
 ///
-/// Once a ChipStatus is complete, the `crosspoints` method provides a way to iterate over the resulting switch positions.
+/// Once a ChipStatus is complete, the [`ChipStatus::crosspoints`] method provides a way to iterate over the resulting switch positions.
 #[derive(Default)]
 pub struct ChipStatus([ChipStatusEntry; 12]);
 

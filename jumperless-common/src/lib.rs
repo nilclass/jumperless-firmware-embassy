@@ -13,9 +13,9 @@ pub mod util;
 mod nets_to_connections;
 pub use nets_to_connections::nets_to_connections;
 
-/// Represents a chip
+/// Represents one of the crosspoint chip on the jumperless
 ///
-/// The value inside is the ASCII character of the chip's letter (A-L).
+/// Chips can be identified either by index (`0..=11`) or by letter (`'A'..='L'`).
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct ChipId(u8);
 
@@ -34,6 +34,11 @@ impl std::fmt::Debug for ChipId {
 }
 
 impl ChipId {
+    /// Returns the letter of this chip as an ASCII character ('A' through 'L')
+    pub fn ascii(&self) -> u8 {
+        self.0
+    }
+
     /// Returns the index of this chip
     ///
     /// Indices are 0 (for chip A) through 11 (for chip L).
@@ -44,9 +49,21 @@ impl ChipId {
     /// Construct ChipId from given index
     ///
     /// The index must be in the 0..=11 range. 0 is chip A, 11 is chip L.
+    ///
+    /// Panics if index is out of range.
     pub fn from_index(index: usize) -> Self {
         assert!(index < 12);
         Self(b'A' + index as u8)
+    }
+
+    /// Construct ChipId from given ASCII letter
+    ///
+    /// The letter must be in the 'A'..='L' range.
+    ///
+    /// Panics if letter is out of range.
+    pub fn from_ascii(ascii: u8) -> Self {
+        assert!(ascii >= b'A' && ascii <= b'L');
+        Self(ascii)
     }
 
     /// Get port on the X edge, at given index
@@ -112,7 +129,22 @@ impl Dimension {
 pub struct Edge(ChipId, Dimension);
 
 impl Edge {
+    pub fn new(chip_id: ChipId, dimension: Dimension) -> Self {
+        Self(chip_id, dimension)
+    }
+
     /// Returns the orthogonal edge on the same chip
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use jumperless_common::{Edge, ChipId, Dimension};
+    /// let chip = ChipId::from_ascii(b'A');
+    /// let ax = Edge::new(chip, Dimension::X);
+    /// let ay = Edge::new(chip, Dimension::Y);
+    /// assert_eq!(ax.orthogonal(), ay);
+    /// assert_eq!(ax, ay.orthogonal());
+    /// ```
     pub fn orthogonal(&self) -> Self {
         Self(self.0, self.1.orthogonal())
     }
@@ -135,14 +167,55 @@ impl Edge {
 pub struct Port(ChipId, Dimension, u8);
 
 impl Port {
+    /// Construct port for given chip, dimension and index
+    pub fn new(chip_id: ChipId, dimension: Dimension, index: u8) -> Self {
+        Self(chip_id, dimension, index)
+    }
+
+    /// The chip on which this port resides
+    pub fn chip_id(&self) -> ChipId {
+        self.0
+    }
+
+    /// Dimension of this port
+    pub fn dimension(&self) -> Dimension {
+        self.1
+    }
+
+    /// Index of the port (0..=15 if `dimension` is X, 0..=7 if it is Y)
+    pub fn index(&self) -> u8 {
+        self.2
+    }
+
     /// The edge on which this port resides
     ///
-    /// Example:
-    ///   Port(ChipId(b'C'), Dimension::Y, 4).edge() //=> Edge(ChipId(b'C'), Dimension::Y)
+    /// # Examples
+    ///
+    /// ```
+    /// # use jumperless_common::{Port, Edge, ChipId, Dimension};
+    /// let port = Port::new(ChipId::from_ascii(b'C'), Dimension::Y, 4);
+    /// assert_eq!(port.edge(), Edge::new(ChipId::from_ascii(b'C'), Dimension::Y));
+    /// ```
     pub fn edge(&self) -> Edge {
         Edge(self.0, self.1)
     }
 
+    /// Iterate over all possible ports
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use jumperless_common::{Port, Edge, ChipId, Dimension};
+    /// let mut ports = Port::all();
+    /// assert_eq!(ports.next(), Some(Port::new(ChipId::from_ascii(b'A'), Dimension::X, 0)));
+    /// assert_eq!(ports.next(), Some(Port::new(ChipId::from_ascii(b'A'), Dimension::X, 1)));
+    /// assert_eq!(ports.next(), Some(Port::new(ChipId::from_ascii(b'A'), Dimension::X, 2)));
+    /// assert_eq!(ports.next(), Some(Port::new(ChipId::from_ascii(b'A'), Dimension::X, 3)));
+    /// assert_eq!(ports.next(), Some(Port::new(ChipId::from_ascii(b'A'), Dimension::X, 4)));
+    /// assert_eq!(Port::all().nth(16), Some(Port::new(ChipId::from_ascii(b'A'), Dimension::Y, 0)));
+    /// assert_eq!(Port::all().nth(24), Some(Port::new(ChipId::from_ascii(b'B'), Dimension::X, 0)));
+    /// assert_eq!(Port::all().count(), 24 * 12);
+    /// ```
     pub fn all() -> impl Iterator<Item = Port> {
         (0..12).flat_map(|chip_index| {
             let chip = ChipId::from_index(chip_index);
@@ -185,7 +258,11 @@ impl Lane {
     }
 }
 
-/// Represents a crossing 
+/// A single crosspoint coordinate, with associated NetId.
+///
+/// Represents a unique switch (by Chip, X and Y coordinate) on the board.
+///
+/// The [`ChipStatus`] structure provides an iterator over these.
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(Debug))]
 pub struct Crosspoint {
