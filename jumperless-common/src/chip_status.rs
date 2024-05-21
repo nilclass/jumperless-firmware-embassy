@@ -143,8 +143,8 @@ impl ChipStatus {
 
         self.visit_port(first, &mut visited, &mut |port, value| {
             if value == Some(net_id) {
-                if let Some(dest) = layout.lane_destination(port) {
-                    return Visit::MarkAndFollow(dest)
+                if let Some(lane) = layout.port_to_lane(port) {
+                    return Visit::MarkAndFollow(lane.opposite(port))
                 }
                 Visit::Mark
             } else {

@@ -1,8 +1,8 @@
-# crosspoint-matrix
+# jumperless-common
 
-WIP implementation of algorithm to compute the crosspoint matrix state from a netlist.
+Common types & datastructures for the jumperless.
 
-Eventually this should be included as a library within the firmware, but for now I'm using a lot of things from `std` to speed things up, so currently the code won't compile to run on a board.
+Also a WIP implementation of an algorithm to compute the crosspoint matrix state from a netlist (`nets_to_connections`).
 
 ## How to use this
 
@@ -13,14 +13,16 @@ To check some additional scenarios, simply add a new test case or tweak an exist
 
 The tests can be run with
 ```
-cargo test
+cargo test --features test
 ```
+
+(the `test` features is currently necessary to pull in dependencies for the tests. This may change in the future)
 
 The tests have a bunch of output, but that's only visible when a test fails.
 
 To see the output any way, run
 ```
-cargo test -- --nocapture
+cargo test --features test -- --nocapture
 ```
 
 ## Documentation

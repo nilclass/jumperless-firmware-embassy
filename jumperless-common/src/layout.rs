@@ -29,29 +29,35 @@ impl Net {
 pub struct NodeSet([u8; 16]);
 
 impl NodeSet {
+    /// Construct a new (empty) set
     pub fn new() -> Self {
         Self([0; 16])
     }
 
+    /// Number of nodes in this set
     pub fn len(&self) -> usize {
         self.0.iter().fold(0, |a, i| a + i.count_ones() as usize)
     }
 
+    /// Does this set contain given node?
     pub fn contains(&self, node: Node) -> bool {
         let (i, j) = Self::address(node);
         (self.0[i] >> j) & 1 == 1
     }
 
+    /// Insert given node
     pub fn insert(&mut self, node: Node) {
         let (i, j) = Self::address(node);
         self.0[i] |= 1 << j;
     }
 
+    /// Remove given node
     pub fn remove(&mut self, node: Node) {
         let (i, j) = Self::address(node);
         self.0[i] &= !(1 << j);
     }
 
+    /// Iterate over nodes in this set
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = Node> + 'a {
         (0..16).flat_map(move |i| {
             (0..8).filter_map(move |j| {
@@ -65,6 +71,7 @@ impl NodeSet {
         })
     }
 
+    /// Removes all nodes from `self`, and returns a copy of self before the removal
     pub fn take(&mut self) -> Self {
         let copy = NodeSet(self.0);
         self.0.fill(0);
@@ -106,30 +113,25 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
         super::nets_to_connections(nets.into_iter(), chip_status, &self)
     }
 
+    /// Look up port for given node
+    ///
+    /// Returns `None` if the node is not mapped to any port (shouldn't be possible, except if future versions of the board introduce new nodes).
     pub fn node_to_port(&self, node: Node) -> Option<Port> {
         self.nodes.iter().find(|NodeMapping(n, _)| *n == node).map(|NodeMapping(_, p)| p).copied()
     }
 
+    /// Look up node that is mapped to the given port
+    ///
+    /// Returns `None` if the port is not mapped to any node.
     pub fn port_to_node(&self, port: Port) -> Option<Node> {
         self.port_map.get_node(port)
     }
 
+    /// Look up lane for which the given port is one of the endpoints.
+    ///
+    /// Returns `None` is the port is not part of any lane.
     pub fn port_to_lane(&self, port: Port) -> Option<Lane> {
         self.port_map.get_lane_index(port).map(move |index| self.lanes[index])
-    }
-
-    /// If the given port is part of a lane, returns the port on the other side of that lane
-    pub fn lane_destination(&self, port: Port) -> Option<Port> {
-        if let Some(index) = self.port_map.get_lane_index(port) {
-            let Lane(a, b) = self.lanes[index];
-            if a == port {
-                Some(b)
-            } else {
-                Some(a)
-            }
-        } else {
-            None
-        }
     }
 }
 
