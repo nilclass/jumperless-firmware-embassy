@@ -146,9 +146,9 @@ async fn main(spawner: Spawner) {
     defmt::info!("Spawning task: leds");
     spawner.spawn(task::leds::main(leds)).unwrap();
 
-    defmt::info!("Spawning task: nets_to_chips");
+    defmt::info!("Spawning task: net_manager");
     spawner
-        .spawn(task::nets_to_chips::main(ch446q))
+        .spawn(task::net_manager::main(ch446q))
         .unwrap();
 
     // Initialize USB driver

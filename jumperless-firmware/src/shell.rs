@@ -3,8 +3,10 @@ use embassy_time::Duration;
 // use heapless::Vec;
 use embassy_usb::{class::cdc_acm::CdcAcmClass, driver::EndpointError};
 use line_buffer::LineBuffer;
+use jumperless_common::layout::Node;
 
 use crate::nets::SupplySwitchPos;
+use crate::task::net_manager;
 use crate::{bus, task};
 
 enum Instruction {
@@ -13,6 +15,8 @@ enum Instruction {
     RainbowBounce,
     SetSwitchPos(SupplySwitchPos),
     PrintSwitchPos,
+    Clear,
+    AddBridge(Node, Node),
 }
 
 impl Instruction {
@@ -42,6 +46,24 @@ impl Instruction {
                         }
                     } else {
                         Ok(Some(Instruction::PrintSwitchPos))
+                    }
+                }
+                "clear" => {
+                    no_more_args(&mut tokens)?;
+                    Ok(Some(Instruction::Clear))
+                }
+                "add-bridge" => {
+                    let a = shift_arg(&mut tokens)?;
+                    let b = shift_arg(&mut tokens)?;
+                    no_more_args(&mut tokens)?;
+                    if let Ok(a) = a.parse::<Node>() {
+                        if let Ok(b) = b.parse::<Node>() {
+                            Ok(Some(Instruction::AddBridge(a, b)))
+                        } else {
+                            Err(b"Error: invalid second node\r\n")
+                        }
+                    } else {
+                        Err(b"Error: invalid  irstnode\r\n")
                     }
                 }
                 // "chipdump" => {
@@ -85,6 +107,8 @@ const HELP: &[&[u8]] = &[
     b"  reset                     Reset (reboot) the device\r\n",
     b"  rainbow-bounce            Play rainbow animation\r\n",
     b"  switch-pos [<5V|3V3|8V>]  Get/set switch position\r\n",
+    b"  clear                     Clear all connections\r\n",
+    b"  add-bridge <node> <node>  Connect two nodes\r\n",
 ];
 
 impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
@@ -184,7 +208,7 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
 
         // move cursor to correct position
         let cursor = self.buffer.cursor() + 2;
-        self.class.write_packet(&[b'\r']).await?;;
+        self.class.write_packet(&[b'\r']).await?;
         for i in 0..cursor {
             self.class.write_packet(&[27, b'[', b'C']).await?;
         }
@@ -239,6 +263,14 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
                     self.class.write_packet(nets.supply_switch_pos.label().as_bytes()).await?;
                     self.class.write_packet(b"\r\n").await?;
                 }
+                Ok(())
+            }
+            Instruction::Clear => {
+                bus::inject(net_manager::Message::Reset).await;
+                Ok(())
+            }
+            Instruction::AddBridge(a, b) => {
+                bus::inject(net_manager::Message::AddBridge(a, b)).await;
                 Ok(())
             }
         }

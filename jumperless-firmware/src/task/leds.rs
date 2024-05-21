@@ -6,8 +6,6 @@ use embassy_sync::{
 };
 use embassy_time::{Duration, Timer};
 
-use super::nets_to_chips;
-
 /// Number of LEDs on the board. This will vary in the future, depending on hardware revision.
 const NUM_LEDS: usize = 111;
 
@@ -35,8 +33,6 @@ pub async fn main(mut leds: Leds) {
     // Play startup animation
     startup_leds(&mut leds).await;
 
-    bus::inject(nets_to_chips::Message::Update).await;
-
     // Set up normal state (colors indicate nets)
     update_from_nets(&mut leds).await;
 
@@ -48,6 +44,7 @@ pub async fn main(mut leds: Leds) {
                 update_from_nets(&mut leds).await;
             }
             Message::UpdateFromNets => {
+                defmt::debug!("Updating from nets");
                 update_from_nets(&mut leds).await;
             }
         }

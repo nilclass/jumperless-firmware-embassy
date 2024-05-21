@@ -34,6 +34,11 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
 
     // For now, just go net-by-net, in the order they are given. Later on this could become more clever and route more complex nets first.
     for net in nets {
+        if net.nodes.len() < 2 {
+            // ignore empty / single-node nets
+            continue;
+        }
+
         // set of edges that need to be connected to satisfy the net
         let mut edges = EdgeSet::empty();
 

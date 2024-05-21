@@ -2,7 +2,6 @@ use jumperless_common::{NetId, layout::{Net, Node}};
 
 use heapless::Vec;
 
-const MAX_NODES_PER_NET: usize = 64;
 const MAX_NETS: usize = 64;
 
 pub struct Nets {
@@ -11,9 +10,52 @@ pub struct Nets {
     pub colors: Vec<(u8, u8, u8), MAX_NETS>,
 }
 
+pub enum AddNodeError {
+    NodeAlreadyAssigned(NetId),
+}
+
 impl Nets {
-    fn add_net<I: Into<NetId>, N: IntoIterator<Item = Node>>(&mut self, id: I, nodes: N, color: (u8, u8, u8)) {
-        _ = self.nets.push(Net::from_iter(id.into(), nodes.into_iter()));
+    pub fn add_node(&mut self, net_id: NetId, node: Node) -> Result<(), AddNodeError> {
+        for net in &self.nets {
+            if net.nodes.contains(node) {
+                return Err(AddNodeError::NodeAlreadyAssigned(net.id));
+            }
+        }
+        self.nets[net_id.index()].nodes.insert(node);
+        Ok(())
+    }
+
+    pub fn remove_node(&mut self, net_id: NetId, node: Node) {
+        self.nets[net_id.index()].nodes.remove(node);
+    }
+
+    pub fn new_net(&mut self, color: (u8, u8, u8)) -> NetId {
+        let net_id = ((self.nets.len() as u8) + 1).into();
+        _ = self.nets.push(Net::new(net_id));
+        _ = self.colors.push(color);
+        net_id
+    }
+
+    pub fn with_node(&self, node: Node) -> Option<NetId> {
+        for net in &self.nets {
+            if net.nodes.contains(node) {
+                return Some(net.id);
+            }
+        }
+        None
+    }
+
+    pub fn merge(&mut self, dest: NetId, src: NetId) {
+        let src_nodes = self.nets[src.index()].nodes.take();
+        let dest_net = &mut self.nets[dest.index()];
+        for node in src_nodes.iter() {
+            dest_net.nodes.insert(node);
+        }
+    }
+
+    fn add_net<N: IntoIterator<Item = Node>>(&mut self, nodes: N, color: (u8, u8, u8)) {
+        let net_id = ((self.nets.len() as u8) + 1).into();
+        _ = self.nets.push(Net::from_iter(net_id, nodes.into_iter()));
         _ = self.colors.push(color);
     }
 
@@ -30,14 +72,14 @@ impl Default for Nets {
             colors: Vec::new(),
         };
 
-        nets.add_net(1, [Node::Gnd], (0x00, 0x1c, 0x04));
-        nets.add_net(2, [Node::Supply5V], (0x1c, 0x07, 0x02));
-        nets.add_net(3, [Node::Supply3V3], (0x1c, 0x01, 0x07));
-        nets.add_net(4, [Node::Dac05V], (0x23, 0x11, 0x11));
-        nets.add_net(5, [Node::Dac18V], (0x23, 0x09, 0x13));
-        nets.add_net(6, [Node::CurrentSensePlus], (0x23, 0x23, 0x23));
-        nets.add_net(7, [Node::CurrentSenseMinus], (0x23, 0x23, 0x23));
-        nets.add_net(8, [Node::Top2, Node::Top3], (0x13, 0x00, 0x23));
+        nets.add_net([Node::Gnd], (0x00, 0x1c, 0x04));
+        nets.add_net([Node::Supply5V], (0x1c, 0x07, 0x02));
+        nets.add_net([Node::Supply3V3], (0x1c, 0x01, 0x07));
+        nets.add_net([Node::Dac05V], (0x23, 0x11, 0x11));
+        nets.add_net([Node::Dac18V], (0x23, 0x09, 0x13));
+        nets.add_net([Node::CurrentSensePlus], (0x23, 0x23, 0x23));
+        nets.add_net([Node::CurrentSenseMinus], (0x23, 0x23, 0x23));
+        // nets.add_net([Node::Top2, Node::Top3], (0x13, 0x00, 0x23));
 
         nets
     }

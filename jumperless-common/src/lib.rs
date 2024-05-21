@@ -89,6 +89,10 @@ impl From<u8> for NetId {
 }
 
 impl NetId {
+    pub fn is_special(&self) -> bool {
+        self.0.get() <= 7
+    }
+
     pub fn index(&self) -> usize {
         self.0.get() as usize - 1
     }

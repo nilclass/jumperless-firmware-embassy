@@ -33,6 +33,15 @@ impl NodeSet {
         Self([0; 16])
     }
 
+    pub fn len(&self) -> usize {
+        self.0.iter().fold(0, |a, i| a + i.count_ones() as usize)
+    }
+
+    pub fn contains(&self, node: Node) -> bool {
+        let (i, j) = Self::address(node);
+        (self.0[i] >> j) & 1 == 1
+    }
+
     pub fn insert(&mut self, node: Node) {
         let (i, j) = Self::address(node);
         self.0[i] |= 1 << j;
@@ -54,6 +63,12 @@ impl NodeSet {
                 }
             })
         })
+    }
+
+    pub fn take(&mut self) -> Self {
+        let copy = NodeSet(self.0);
+        self.0.fill(0);
+        copy
     }
 
     fn address(node: Node) -> (usize, usize) {
@@ -601,8 +616,7 @@ impl Node {
 #[derive(Debug)]
 pub struct InvalidNode;
 
-#[cfg(feature = "std")]
-impl std::str::FromStr for Node {
+impl core::str::FromStr for Node {
     type Err = InvalidNode;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
