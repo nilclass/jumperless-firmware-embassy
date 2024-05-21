@@ -20,6 +20,9 @@ pub enum Message {
 
     /// Update LEDs to reflect changes to the nets or other state
     UpdateFromNets,
+
+    /// Turn on a single LED for testing, for half a second
+    TestLed(usize),
 }
 
 impl bus::BusMessage for Message {
@@ -45,6 +48,14 @@ pub async fn main(mut leds: Leds) {
             }
             Message::UpdateFromNets => {
                 defmt::debug!("Updating from nets");
+                update_from_nets(&mut leds).await;
+            }
+            Message::TestLed(i) => {
+                leds.off().await;
+                Timer::after_millis(1).await;
+                leds.set_rgb8(i, (32, 32, 32));
+                leds.flush().await;
+                Timer::after_millis(500).await;
                 update_from_nets(&mut leds).await;
             }
         }

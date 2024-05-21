@@ -143,6 +143,11 @@ impl<'d, P: Instance, const S: usize, const N: usize> Leds<'d, P, S, N> {
     /// - turns off all other LEDs
     pub async fn update_from_nets(&mut self, nets: &Nets) {
         self.words.fill(0);
+
+        for i in 80..=109 {
+            self.set_rgb8(i, (0x02, 0x00, 0x08)); // headerglow
+        }
+
         for net in &nets.nets {
             for node in net.nodes.iter() {
                 if let Some(pixel) = node.pixel() {
@@ -154,9 +159,6 @@ impl<'d, P: Instance, const S: usize, const N: usize> Leds<'d, P, S, N> {
         let v5 = nets.color(nets.nets[1].id);
         let v33 = nets.color(nets.nets[2].id);
 
-        for i in 80..=109 {
-            self.set_rgb8(i, (0x02, 0x00, 0x08)); // headerglow
-        }
         self.set_rgb8(83, gnd);
         self.set_rgb8(108, gnd);
         self.set_rgb8(109, v5);

@@ -6,7 +6,7 @@ use line_buffer::LineBuffer;
 use jumperless_common::layout::Node;
 
 use crate::nets::SupplySwitchPos;
-use crate::task::net_manager;
+use crate::task::{net_manager, leds};
 use crate::{bus, task};
 
 enum Instruction {
@@ -17,6 +17,7 @@ enum Instruction {
     PrintSwitchPos,
     Clear,
     AddBridge(Node, Node),
+    TestLed(usize),
 }
 
 impl Instruction {
@@ -66,6 +67,15 @@ impl Instruction {
                         Err(b"Error: invalid  irstnode\r\n")
                     }
                 }
+                "test-led" => {
+                    let i = shift_arg(&mut tokens)?;
+                    no_more_args(&mut tokens)?;
+                    if let Ok(i) = i.parse::<usize>() {
+                        Ok(Some(Instruction::TestLed(i)))
+                    } else {
+                        Err(b"Error: invalid led number\r\n")
+                    }
+                }
                 // "chipdump" => {
                 //     no_more_args(&mut tokens)?;
                 // }
@@ -109,6 +119,7 @@ const HELP: &[&[u8]] = &[
     b"  switch-pos [<5V|3V3|8V>]  Get/set switch position\r\n",
     b"  clear                     Clear all connections\r\n",
     b"  add-bridge <node> <node>  Connect two nodes\r\n",
+    b"  test-led <led-number>     Test an LED\r\n",
 ];
 
 impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
@@ -271,6 +282,10 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
             }
             Instruction::AddBridge(a, b) => {
                 bus::inject(net_manager::Message::AddBridge(a, b)).await;
+                Ok(())
+            }
+            Instruction::TestLed(index) => {
+                bus::inject(leds::Message::TestLed(index)).await;
                 Ok(())
             }
         }
