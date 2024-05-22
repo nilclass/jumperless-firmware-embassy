@@ -11,7 +11,7 @@ use embassy_rp::{
 use embassy_time::Timer;
 use fixed::traits::ToFixed;
 use pio::{InstructionOperands, SetDestination};
-use jumperless_common::{ChipId, Crosspoint};
+use jumperless_common::{types::ChipId, Crosspoint};
 
 pub struct Ch446q<'d, P: Instance, const S: usize> {
     dma: PeripheralRef<'d, AnyChannel>,

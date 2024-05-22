@@ -1,9 +1,11 @@
 use crate::{
-    ChipStatus,
-    Edge,
-    NetId,
-    util::{EdgeSet, LaneSet},
     layout::{Layout, Net},
+    ChipStatus,
+};
+
+use jumperless_types::{
+    set::{EdgeSet, LaneSet},
+    Edge, NetId,
 };
 
 use heapless::Vec;
@@ -52,8 +54,12 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
             edges.insert(port.edge().orthogonal());
         }
 
-        if edges.len() == 1 { // single-chip net. Will be connected at the very end, using an arbitrary free lane port.
-            pending_edge_nets.push((edges.pop().unwrap(), net.id)).ok().unwrap();
+        if edges.len() == 1 {
+            // single-chip net. Will be connected at the very end, using an arbitrary free lane port.
+            pending_edge_nets
+                .push((edges.pop().unwrap(), net.id))
+                .ok()
+                .unwrap();
         } else {
             let mut connected_edges = EdgeSet::empty();
 
@@ -64,7 +70,8 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
                 let mut direct = None;
                 'outer: for unconnected in edges.iter() {
                     for connected in connected_edges.iter() {
-                        if let Some(lane) = lanes.take(|lane| lane.connects(connected, unconnected)) {
+                        if let Some(lane) = lanes.take(|lane| lane.connects(connected, unconnected))
+                        {
                             direct = Some((unconnected, lane));
                             break 'outer;
                         }
@@ -77,7 +84,14 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
                 } else {
                     // no direct lane found, add the first pair as a bounce candidate, and try again
                     // (this will likely fail, but it's a start)
-                    pending_bounces.push((connected_edges.iter().next().unwrap(), edges.pop().unwrap(), net.id)).ok().unwrap();
+                    pending_bounces
+                        .push((
+                            connected_edges.iter().next().unwrap(),
+                            edges.pop().unwrap(),
+                            net.id,
+                        ))
+                        .ok()
+                        .unwrap();
                 }
             }
         }
@@ -96,22 +110,26 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
             chip_status.set_lane(lane, net_id);
             pending_edge_nets.push((edge_b, net_id)).ok().unwrap();
         } else {
-
             let mut success = false;
 
             'outer: for port in edge_a.ports() {
-                if let Some(index0) = layout.port_map.get_lane_index(port) && lanes.has_index(index0) {
+                if let Some(index0) = layout.port_map.get_lane_index(port)
+                    && lanes.has_index(index0)
+                {
                     let lane0 = layout.lanes[index0];
                     // destination edge on the target chip of lane0
                     let dest0_edge = lane0.opposite(port).edge();
 
                     // first check if there is an orthogonal lane leading to edge B
                     for port in dest0_edge.orthogonal().ports() {
-                        if let Some(index1) = layout.port_map.get_lane_index(port) && lanes.has_index(index1) {
+                        if let Some(index1) = layout.port_map.get_lane_index(port)
+                            && lanes.has_index(index1)
+                        {
                             let lane1 = layout.lanes[index1];
                             let dest1_edge = lane1.opposite(port).edge();
 
-                            if dest1_edge == edge_b { // success!
+                            if dest1_edge == edge_b {
+                                // success!
                                 chip_status.set_lane(lane0, net_id);
                                 chip_status.set_lane(lane1, net_id);
 
@@ -127,7 +145,9 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
 
                     // next check if there is a lane on the same edge, leading to edge B
                     for port in dest0_edge.ports() {
-                        if let Some(index1) = layout.port_map.get_lane_index(port) && lanes.has_index(index1) {
+                        if let Some(index1) = layout.port_map.get_lane_index(port)
+                            && lanes.has_index(index1)
+                        {
                             let lane1 = layout.lanes[index1];
                             let dest1_edge = lane1.opposite(port).edge();
 
@@ -135,7 +155,9 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
                                 // found an adjacent edge that goes to the right place.
                                 // now find an orthogonal edge to this adjacent one, to complete the bounce
                                 for port in dest0_edge.orthogonal().ports() {
-                                    if let Some(index2) = layout.port_map.get_lane_index(port) && lanes.has_index(index2) {
+                                    if let Some(index2) = layout.port_map.get_lane_index(port)
+                                        && lanes.has_index(index2)
+                                    {
                                         let lane2 = layout.lanes[index2];
                                         chip_status.set_lane(lane0, net_id);
                                         chip_status.set_lane(lane1, net_id);
@@ -166,7 +188,7 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
         if let Some(lane) = lanes.take(|lane| lane.touches(edge)) {
             chip_status.set_lane(lane, net_id);
         } else {
-            return Err(Error::MissingPort(net_id, edge))
+            return Err(Error::MissingPort(net_id, edge));
         }
     }
 

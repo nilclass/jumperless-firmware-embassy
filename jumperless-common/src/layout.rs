@@ -1,4 +1,5 @@
-use crate::{Port, Lane, ChipId, Dimension, ChipStatus, NetId, util::PortSet};
+use crate::ChipStatus;
+use jumperless_types::{set::PortSet, ChipId, Dimension, Lane, NetId, Port};
 
 pub struct NodeMapping(Node, Port);
 
@@ -17,11 +18,17 @@ pub struct Net {
 
 impl Net {
     pub fn new(id: NetId) -> Self {
-        Self { id, nodes: NodeSet::new() }
+        Self {
+            id,
+            nodes: NodeSet::new(),
+        }
     }
 
     pub fn from_iter(id: NetId, nodes: impl Iterator<Item = Node>) -> Self {
-        Self { id, nodes: nodes.collect() }
+        Self {
+            id,
+            nodes: nodes.collect(),
+        }
     }
 }
 
@@ -96,20 +103,27 @@ impl FromIterator<Node> for NodeSet {
 
 impl core::fmt::Debug for NodeSet {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.iter().fold(
-            &mut f.debug_list(),
-            |list, node| list.entry(&node),
-        ).finish()
+        self.iter()
+            .fold(&mut f.debug_list(), |list, node| list.entry(&node))
+            .finish()
     }
 }
 
 impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_COUNT> {
     pub fn new(nodes: [NodeMapping; NODE_COUNT], lanes: [Lane; LANE_COUNT]) -> Self {
         let port_map = PortMap::new(&nodes, &lanes);
-        Self { nodes, lanes, port_map }
+        Self {
+            nodes,
+            lanes,
+            port_map,
+        }
     }
 
-    pub fn nets_to_connections(&self, nets: &[Net], chip_status: &mut ChipStatus) -> Result<(), super::nets_to_connections::Error> {
+    pub fn nets_to_connections(
+        &self,
+        nets: &[Net],
+        chip_status: &mut ChipStatus,
+    ) -> Result<(), super::nets_to_connections::Error> {
         super::nets_to_connections(nets.into_iter(), chip_status, &self)
     }
 
@@ -117,7 +131,11 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
     ///
     /// Returns `None` if the node is not mapped to any port (shouldn't be possible, except if future versions of the board introduce new nodes).
     pub fn node_to_port(&self, node: Node) -> Option<Port> {
-        self.nodes.iter().find(|NodeMapping(n, _)| *n == node).map(|NodeMapping(_, p)| p).copied()
+        self.nodes
+            .iter()
+            .find(|NodeMapping(n, _)| *n == node)
+            .map(|NodeMapping(_, p)| p)
+            .copied()
     }
 
     /// Look up node that is mapped to the given port
@@ -131,7 +149,9 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
     ///
     /// Returns `None` is the port is not part of any lane.
     pub fn port_to_lane(&self, port: Port) -> Option<Lane> {
-        self.port_map.get_lane_index(port).map(move |index| self.lanes[index])
+        self.port_map
+            .get_lane_index(port)
+            .map(move |index| self.lanes[index])
     }
 }
 
@@ -145,17 +165,23 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
         let mut used_ports = PortSet::empty();
         for NodeMapping(node, port) in &self.nodes {
             if used_ports.contains(*port) {
-                problems.push(format!("Port {port:?} used more than once (last use in node mapping {node:?})"));
+                problems.push(format!(
+                    "Port {port:?} used more than once (last use in node mapping {node:?})"
+                ));
             }
             used_ports.insert(*port);
         }
         for Lane(a, b) in &self.lanes {
             if used_ports.contains(*a) {
-                problems.push(format!("Port {a:?} used more than once (last use in lane with port {b:?})"));
+                problems.push(format!(
+                    "Port {a:?} used more than once (last use in lane with port {b:?})"
+                ));
             }
             used_ports.insert(*a);
             if used_ports.contains(*b) {
-                problems.push(format!("Port {b:?} used more than once (last use in lane with port {a:?})"));
+                problems.push(format!(
+                    "Port {b:?} used more than once (last use in lane with port {a:?})"
+                ));
             }
             used_ports.insert(*b);
         }
@@ -255,219 +281,833 @@ impl PortMap {
         self.0[Self::address(port)] = PortMapEntry::new_lane_index(index);
     }
 
-    fn address(Port(chip, dimension, index): Port) -> usize {
-        chip.index() * 24 + dimension.index() * 16 + index as usize
+    fn address(port: Port) -> usize {
+        port.chip_id().index() * 24 + port.dimension().index() * 16 + port.index() as usize
     }
 }
 
 impl Layout<120, 84> {
     pub fn v4() -> Self {
-        Self::new([
-                NodeMapping(Node::Top2, Port(ChipId(b'A'), Dimension::Y, 1)),
-                NodeMapping(Node::Top3, Port(ChipId(b'A'), Dimension::Y, 2)),
-                NodeMapping(Node::Top4, Port(ChipId(b'A'), Dimension::Y, 3)),
-                NodeMapping(Node::Top5, Port(ChipId(b'A'), Dimension::Y, 4)),
-                NodeMapping(Node::Top6, Port(ChipId(b'A'), Dimension::Y, 5)),
-                NodeMapping(Node::Top7, Port(ChipId(b'A'), Dimension::Y, 6)),
-                NodeMapping(Node::Top8, Port(ChipId(b'A'), Dimension::Y, 7)),
-                NodeMapping(Node::Top9, Port(ChipId(b'B'), Dimension::Y, 1)),
-                NodeMapping(Node::Top10, Port(ChipId(b'B'), Dimension::Y, 2)),
-                NodeMapping(Node::Top11, Port(ChipId(b'B'), Dimension::Y, 3)),
-                NodeMapping(Node::Top12, Port(ChipId(b'B'), Dimension::Y, 4)),
-                NodeMapping(Node::Top13, Port(ChipId(b'B'), Dimension::Y, 5)),
-                NodeMapping(Node::Top14, Port(ChipId(b'B'), Dimension::Y, 6)),
-                NodeMapping(Node::Top15, Port(ChipId(b'B'), Dimension::Y, 7)),
-                NodeMapping(Node::Top16, Port(ChipId(b'C'), Dimension::Y, 1)),
-                NodeMapping(Node::Top17, Port(ChipId(b'C'), Dimension::Y, 2)),
-                NodeMapping(Node::Top18, Port(ChipId(b'C'), Dimension::Y, 3)),
-                NodeMapping(Node::Top19, Port(ChipId(b'C'), Dimension::Y, 4)),
-                NodeMapping(Node::Top20, Port(ChipId(b'C'), Dimension::Y, 5)),
-                NodeMapping(Node::Top21, Port(ChipId(b'C'), Dimension::Y, 6)),
-                NodeMapping(Node::Top22, Port(ChipId(b'C'), Dimension::Y, 7)),
-                NodeMapping(Node::Top23, Port(ChipId(b'D'), Dimension::Y, 1)),
-                NodeMapping(Node::Top24, Port(ChipId(b'D'), Dimension::Y, 2)),
-                NodeMapping(Node::Top25, Port(ChipId(b'D'), Dimension::Y, 3)),
-                NodeMapping(Node::Top26, Port(ChipId(b'D'), Dimension::Y, 4)),
-                NodeMapping(Node::Top27, Port(ChipId(b'D'), Dimension::Y, 5)),
-                NodeMapping(Node::Top28, Port(ChipId(b'D'), Dimension::Y, 6)),
-                NodeMapping(Node::Top29, Port(ChipId(b'D'), Dimension::Y, 7)),
-                NodeMapping(Node::Bottom2, Port(ChipId(b'E'), Dimension::Y, 1)),
-                NodeMapping(Node::Bottom3, Port(ChipId(b'E'), Dimension::Y, 2)),
-                NodeMapping(Node::Bottom4, Port(ChipId(b'E'), Dimension::Y, 3)),
-                NodeMapping(Node::Bottom5, Port(ChipId(b'E'), Dimension::Y, 4)),
-                NodeMapping(Node::Bottom6, Port(ChipId(b'E'), Dimension::Y, 5)),
-                NodeMapping(Node::Bottom7, Port(ChipId(b'E'), Dimension::Y, 6)),
-                NodeMapping(Node::Bottom8, Port(ChipId(b'E'), Dimension::Y, 7)),
-                NodeMapping(Node::Bottom9, Port(ChipId(b'F'), Dimension::Y, 1)),
-                NodeMapping(Node::Bottom10, Port(ChipId(b'F'), Dimension::Y, 2)),
-                NodeMapping(Node::Bottom11, Port(ChipId(b'F'), Dimension::Y, 3)),
-                NodeMapping(Node::Bottom12, Port(ChipId(b'F'), Dimension::Y, 4)),
-                NodeMapping(Node::Bottom13, Port(ChipId(b'F'), Dimension::Y, 5)),
-                NodeMapping(Node::Bottom14, Port(ChipId(b'F'), Dimension::Y, 6)),
-                NodeMapping(Node::Bottom15, Port(ChipId(b'F'), Dimension::Y, 7)),
-                NodeMapping(Node::Bottom16, Port(ChipId(b'G'), Dimension::Y, 1)),
-                NodeMapping(Node::Bottom17, Port(ChipId(b'G'), Dimension::Y, 2)),
-                NodeMapping(Node::Bottom18, Port(ChipId(b'G'), Dimension::Y, 3)),
-                NodeMapping(Node::Bottom19, Port(ChipId(b'G'), Dimension::Y, 4)),
-                NodeMapping(Node::Bottom20, Port(ChipId(b'G'), Dimension::Y, 5)),
-                NodeMapping(Node::Bottom21, Port(ChipId(b'G'), Dimension::Y, 6)),
-                NodeMapping(Node::Bottom22, Port(ChipId(b'G'), Dimension::Y, 7)),
-                NodeMapping(Node::Bottom23, Port(ChipId(b'H'), Dimension::Y, 1)),
-                NodeMapping(Node::Bottom24, Port(ChipId(b'H'), Dimension::Y, 2)),
-                NodeMapping(Node::Bottom25, Port(ChipId(b'H'), Dimension::Y, 3)),
-                NodeMapping(Node::Bottom26, Port(ChipId(b'H'), Dimension::Y, 4)),
-                NodeMapping(Node::Bottom27, Port(ChipId(b'H'), Dimension::Y, 5)),
-                NodeMapping(Node::Bottom28, Port(ChipId(b'H'), Dimension::Y, 6)),
-                NodeMapping(Node::Bottom29, Port(ChipId(b'H'), Dimension::Y, 7)),
-                NodeMapping(Node::NanoA0, Port(ChipId(b'I'), Dimension::X, 0)),
-                NodeMapping(Node::NanoD1, Port(ChipId(b'I'), Dimension::X, 1)),
-                NodeMapping(Node::NanoA2, Port(ChipId(b'I'), Dimension::X, 2)),
-                NodeMapping(Node::NanoD3, Port(ChipId(b'I'), Dimension::X, 3)),
-                NodeMapping(Node::NanoA4, Port(ChipId(b'I'), Dimension::X, 4)),
-                NodeMapping(Node::NanoD5, Port(ChipId(b'I'), Dimension::X, 5)),
-                NodeMapping(Node::NanoA6, Port(ChipId(b'I'), Dimension::X, 6)),
-                NodeMapping(Node::NanoD7, Port(ChipId(b'I'), Dimension::X, 7)),
-                NodeMapping(Node::NanoD11, Port(ChipId(b'I'), Dimension::X, 8)),
-                NodeMapping(Node::NanoD9, Port(ChipId(b'I'), Dimension::X, 9)),
-                NodeMapping(Node::NanoD13, Port(ChipId(b'I'), Dimension::X, 10)),
-                NodeMapping(Node::NanoReset, Port(ChipId(b'I'), Dimension::X, 11)),
-                NodeMapping(Node::Dac05V, Port(ChipId(b'I'), Dimension::X, 12)),
-                NodeMapping(Node::Adc05V, Port(ChipId(b'I'), Dimension::X, 13)),
-                NodeMapping(Node::Supply3V3, Port(ChipId(b'I'), Dimension::X, 14)),
-                NodeMapping(Node::Gnd, Port(ChipId(b'I'), Dimension::X, 15)),
-                NodeMapping(Node::NanoD0, Port(ChipId(b'J'), Dimension::X, 0)),
-                NodeMapping(Node::NanoA1, Port(ChipId(b'J'), Dimension::X, 1)),
-                NodeMapping(Node::NanoD2, Port(ChipId(b'J'), Dimension::X, 2)),
-                NodeMapping(Node::NanoA3, Port(ChipId(b'J'), Dimension::X, 3)),
-                NodeMapping(Node::NanoD4, Port(ChipId(b'J'), Dimension::X, 4)),
-                NodeMapping(Node::NanoA5, Port(ChipId(b'J'), Dimension::X, 5)),
-                NodeMapping(Node::NanoD6, Port(ChipId(b'J'), Dimension::X, 6)),
-                NodeMapping(Node::NanoA7, Port(ChipId(b'J'), Dimension::X, 7)),
-                NodeMapping(Node::NanoD8, Port(ChipId(b'J'), Dimension::X, 8)),
-                NodeMapping(Node::NanoD10, Port(ChipId(b'J'), Dimension::X, 9)),
-                NodeMapping(Node::NanoD12, Port(ChipId(b'J'), Dimension::X, 10)),
-                NodeMapping(Node::NanoAref, Port(ChipId(b'J'), Dimension::X, 11)),
-                NodeMapping(Node::Dac18V, Port(ChipId(b'J'), Dimension::X, 12)),
-                NodeMapping(Node::Adc15V, Port(ChipId(b'J'), Dimension::X, 13)),
-                NodeMapping(Node::Supply5V, Port(ChipId(b'J'), Dimension::X, 14)),
-                NodeMapping(Node::Gnd, Port(ChipId(b'J'), Dimension::X, 15)),
-                NodeMapping(Node::NanoA0, Port(ChipId(b'K'), Dimension::X, 0)),
-                NodeMapping(Node::NanoA1, Port(ChipId(b'K'), Dimension::X, 1)),
-                NodeMapping(Node::NanoA2, Port(ChipId(b'K'), Dimension::X, 2)),
-                NodeMapping(Node::NanoA3, Port(ChipId(b'K'), Dimension::X, 3)),
-                NodeMapping(Node::NanoD2, Port(ChipId(b'K'), Dimension::X, 4)),
-                NodeMapping(Node::NanoD3, Port(ChipId(b'K'), Dimension::X, 5)),
-                NodeMapping(Node::NanoD4, Port(ChipId(b'K'), Dimension::X, 6)),
-                NodeMapping(Node::NanoD5, Port(ChipId(b'K'), Dimension::X, 7)),
-                NodeMapping(Node::NanoD6, Port(ChipId(b'K'), Dimension::X, 8)),
-                NodeMapping(Node::NanoD7, Port(ChipId(b'K'), Dimension::X, 9)),
-                NodeMapping(Node::NanoD8, Port(ChipId(b'K'), Dimension::X, 10)),
-                NodeMapping(Node::NanoD9, Port(ChipId(b'K'), Dimension::X, 11)),
-                NodeMapping(Node::NanoD10, Port(ChipId(b'K'), Dimension::X, 12)),
-                NodeMapping(Node::NanoD11, Port(ChipId(b'K'), Dimension::X, 13)),
-                NodeMapping(Node::NanoD12, Port(ChipId(b'K'), Dimension::X, 14)),
-                NodeMapping(Node::Adc25V, Port(ChipId(b'K'), Dimension::X, 15)),
-                NodeMapping(Node::CurrentSenseMinus, Port(ChipId(b'L'), Dimension::X, 0)),
-                NodeMapping(Node::CurrentSensePlus, Port(ChipId(b'L'), Dimension::X, 1)),
-                NodeMapping(Node::Adc05V, Port(ChipId(b'L'), Dimension::X, 2)),
-                NodeMapping(Node::Adc15V, Port(ChipId(b'L'), Dimension::X, 3)),
-                NodeMapping(Node::Adc25V, Port(ChipId(b'L'), Dimension::X, 4)),
-                NodeMapping(Node::Adc38V, Port(ChipId(b'L'), Dimension::X, 5)),
-                NodeMapping(Node::Dac18V, Port(ChipId(b'L'), Dimension::X, 6)),
-                NodeMapping(Node::Dac05V, Port(ChipId(b'L'), Dimension::X, 7)),
-                NodeMapping(Node::Top1, Port(ChipId(b'L'), Dimension::X, 8)),
-                NodeMapping(Node::Top30, Port(ChipId(b'L'), Dimension::X, 9)),
-                NodeMapping(Node::Bottom1, Port(ChipId(b'L'), Dimension::X, 10)),
-                NodeMapping(Node::Bottom30, Port(ChipId(b'L'), Dimension::X, 11)),
-                NodeMapping(Node::RpUartTx, Port(ChipId(b'L'), Dimension::X, 12)),
-                NodeMapping(Node::RpUartRx, Port(ChipId(b'L'), Dimension::X, 13)),
-                NodeMapping(Node::Supply5V, Port(ChipId(b'L'), Dimension::X, 14)),
-                NodeMapping(Node::RpGpio0, Port(ChipId(b'L'), Dimension::X, 15)),
-            ], [
-                Lane(Port(ChipId(b'A'), Dimension::X, 0), Port(ChipId(b'I'), Dimension::Y, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 1), Port(ChipId(b'J'), Dimension::Y, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 2), Port(ChipId(b'B'), Dimension::X, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 3), Port(ChipId(b'B'), Dimension::X, 1)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 4), Port(ChipId(b'C'), Dimension::X, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 5), Port(ChipId(b'C'), Dimension::X, 1)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 6), Port(ChipId(b'D'), Dimension::X, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 7), Port(ChipId(b'D'), Dimension::X, 1)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 8), Port(ChipId(b'E'), Dimension::X, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 9), Port(ChipId(b'K'), Dimension::Y, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 10), Port(ChipId(b'F'), Dimension::X, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 11), Port(ChipId(b'F'), Dimension::X, 1)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 12), Port(ChipId(b'G'), Dimension::X, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 13), Port(ChipId(b'G'), Dimension::X, 1)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 14), Port(ChipId(b'H'), Dimension::X, 0)),
-                Lane(Port(ChipId(b'A'), Dimension::X, 15), Port(ChipId(b'H'), Dimension::X, 1)),
-                Lane(Port(ChipId(b'A'), Dimension::Y, 0), Port(ChipId(b'L'), Dimension::Y, 0)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 2), Port(ChipId(b'I'), Dimension::Y, 1)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 3), Port(ChipId(b'J'), Dimension::Y, 1)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 4), Port(ChipId(b'C'), Dimension::X, 2)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 5), Port(ChipId(b'C'), Dimension::X, 3)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 6), Port(ChipId(b'D'), Dimension::X, 2)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 7), Port(ChipId(b'D'), Dimension::X, 3)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 8), Port(ChipId(b'E'), Dimension::X, 2)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 9), Port(ChipId(b'E'), Dimension::X, 3)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 10), Port(ChipId(b'F'), Dimension::X, 2)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 11), Port(ChipId(b'K'), Dimension::Y, 1)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 12), Port(ChipId(b'G'), Dimension::X, 2)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 13), Port(ChipId(b'G'), Dimension::X, 3)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 14), Port(ChipId(b'H'), Dimension::X, 2)),
-                Lane(Port(ChipId(b'B'), Dimension::X, 15), Port(ChipId(b'H'), Dimension::X, 3)),
-                Lane(Port(ChipId(b'B'), Dimension::Y, 0), Port(ChipId(b'L'), Dimension::Y, 1)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 4), Port(ChipId(b'I'), Dimension::Y, 2)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 5), Port(ChipId(b'J'), Dimension::Y, 2)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 6), Port(ChipId(b'D'), Dimension::X, 4)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 7), Port(ChipId(b'D'), Dimension::X, 5)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 8), Port(ChipId(b'E'), Dimension::X, 4)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 9), Port(ChipId(b'E'), Dimension::X, 5)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 10), Port(ChipId(b'F'), Dimension::X, 4)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 11), Port(ChipId(b'F'), Dimension::X, 5)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 12), Port(ChipId(b'G'), Dimension::X, 4)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 13), Port(ChipId(b'K'), Dimension::Y, 2)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 14), Port(ChipId(b'H'), Dimension::X, 4)),
-                Lane(Port(ChipId(b'C'), Dimension::X, 15), Port(ChipId(b'H'), Dimension::X, 5)),
-                Lane(Port(ChipId(b'C'), Dimension::Y, 0), Port(ChipId(b'L'), Dimension::Y, 2)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 6), Port(ChipId(b'I'), Dimension::Y, 3)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 7), Port(ChipId(b'J'), Dimension::Y, 3)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 8), Port(ChipId(b'E'), Dimension::X, 6)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 9), Port(ChipId(b'E'), Dimension::X, 7)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 10), Port(ChipId(b'F'), Dimension::X, 6)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 11), Port(ChipId(b'F'), Dimension::X, 7)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 12), Port(ChipId(b'G'), Dimension::X, 6)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 13), Port(ChipId(b'G'), Dimension::X, 7)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 14), Port(ChipId(b'H'), Dimension::X, 6)),
-                Lane(Port(ChipId(b'D'), Dimension::X, 15), Port(ChipId(b'K'), Dimension::Y, 3)),
-                Lane(Port(ChipId(b'D'), Dimension::Y, 0), Port(ChipId(b'L'), Dimension::Y, 3)),
-                Lane(Port(ChipId(b'E'), Dimension::X, 1), Port(ChipId(b'K'), Dimension::Y, 4)),
-                Lane(Port(ChipId(b'E'), Dimension::X, 8), Port(ChipId(b'I'), Dimension::Y, 4)),
-                Lane(Port(ChipId(b'E'), Dimension::X, 9), Port(ChipId(b'J'), Dimension::Y, 4)),
-                Lane(Port(ChipId(b'E'), Dimension::X, 10), Port(ChipId(b'F'), Dimension::X, 8)),
-                Lane(Port(ChipId(b'E'), Dimension::X, 11), Port(ChipId(b'F'), Dimension::X, 9)),
-                Lane(Port(ChipId(b'E'), Dimension::X, 12), Port(ChipId(b'G'), Dimension::X, 8)),
-                Lane(Port(ChipId(b'E'), Dimension::X, 13), Port(ChipId(b'G'), Dimension::X, 9)),
-                Lane(Port(ChipId(b'E'), Dimension::X, 14), Port(ChipId(b'H'), Dimension::X, 8)),
-                Lane(Port(ChipId(b'E'), Dimension::X, 15), Port(ChipId(b'H'), Dimension::X, 9)),
-                Lane(Port(ChipId(b'E'), Dimension::Y, 0), Port(ChipId(b'L'), Dimension::Y, 4)),
-                Lane(Port(ChipId(b'F'), Dimension::X, 3), Port(ChipId(b'K'), Dimension::Y, 5)),
-                Lane(Port(ChipId(b'F'), Dimension::X, 10), Port(ChipId(b'I'), Dimension::Y, 5)),
-                Lane(Port(ChipId(b'F'), Dimension::X, 11), Port(ChipId(b'J'), Dimension::Y, 5)),
-                Lane(Port(ChipId(b'F'), Dimension::X, 12), Port(ChipId(b'G'), Dimension::X, 10)),
-                Lane(Port(ChipId(b'F'), Dimension::X, 13), Port(ChipId(b'G'), Dimension::X, 11)),
-                Lane(Port(ChipId(b'F'), Dimension::X, 14), Port(ChipId(b'H'), Dimension::X, 10)),
-                Lane(Port(ChipId(b'F'), Dimension::X, 15), Port(ChipId(b'H'), Dimension::X, 11)),
-                Lane(Port(ChipId(b'F'), Dimension::Y, 0), Port(ChipId(b'L'), Dimension::Y, 5)),
-                Lane(Port(ChipId(b'G'), Dimension::X, 5), Port(ChipId(b'K'), Dimension::Y, 6)),
-                Lane(Port(ChipId(b'G'), Dimension::X, 12), Port(ChipId(b'I'), Dimension::Y, 6)),
-                Lane(Port(ChipId(b'G'), Dimension::X, 13), Port(ChipId(b'J'), Dimension::Y, 6)),
-                Lane(Port(ChipId(b'G'), Dimension::X, 14), Port(ChipId(b'H'), Dimension::X, 12)),
-                Lane(Port(ChipId(b'G'), Dimension::X, 15), Port(ChipId(b'H'), Dimension::X, 13)),
-                Lane(Port(ChipId(b'G'), Dimension::Y, 0), Port(ChipId(b'L'), Dimension::Y, 6)),
-                Lane(Port(ChipId(b'H'), Dimension::X, 7), Port(ChipId(b'K'), Dimension::Y, 7)),
-                Lane(Port(ChipId(b'H'), Dimension::X, 14), Port(ChipId(b'I'), Dimension::Y, 7)),
-                Lane(Port(ChipId(b'H'), Dimension::X, 15), Port(ChipId(b'J'), Dimension::Y, 7)),
-                Lane(Port(ChipId(b'H'), Dimension::Y, 0), Port(ChipId(b'L'), Dimension::Y, 7)),
+        Self::new(
+            [
+                NodeMapping(
+                    Node::Top2,
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::Y, 1),
+                ),
+                NodeMapping(
+                    Node::Top3,
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::Y, 2),
+                ),
+                NodeMapping(
+                    Node::Top4,
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::Y, 3),
+                ),
+                NodeMapping(
+                    Node::Top5,
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::Y, 4),
+                ),
+                NodeMapping(
+                    Node::Top6,
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::Y, 5),
+                ),
+                NodeMapping(
+                    Node::Top7,
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::Y, 6),
+                ),
+                NodeMapping(
+                    Node::Top8,
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::Y, 7),
+                ),
+                NodeMapping(
+                    Node::Top9,
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::Y, 1),
+                ),
+                NodeMapping(
+                    Node::Top10,
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::Y, 2),
+                ),
+                NodeMapping(
+                    Node::Top11,
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::Y, 3),
+                ),
+                NodeMapping(
+                    Node::Top12,
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::Y, 4),
+                ),
+                NodeMapping(
+                    Node::Top13,
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::Y, 5),
+                ),
+                NodeMapping(
+                    Node::Top14,
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::Y, 6),
+                ),
+                NodeMapping(
+                    Node::Top15,
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::Y, 7),
+                ),
+                NodeMapping(
+                    Node::Top16,
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::Y, 1),
+                ),
+                NodeMapping(
+                    Node::Top17,
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::Y, 2),
+                ),
+                NodeMapping(
+                    Node::Top18,
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::Y, 3),
+                ),
+                NodeMapping(
+                    Node::Top19,
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::Y, 4),
+                ),
+                NodeMapping(
+                    Node::Top20,
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::Y, 5),
+                ),
+                NodeMapping(
+                    Node::Top21,
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::Y, 6),
+                ),
+                NodeMapping(
+                    Node::Top22,
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::Y, 7),
+                ),
+                NodeMapping(
+                    Node::Top23,
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::Y, 1),
+                ),
+                NodeMapping(
+                    Node::Top24,
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::Y, 2),
+                ),
+                NodeMapping(
+                    Node::Top25,
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::Y, 3),
+                ),
+                NodeMapping(
+                    Node::Top26,
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::Y, 4),
+                ),
+                NodeMapping(
+                    Node::Top27,
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::Y, 5),
+                ),
+                NodeMapping(
+                    Node::Top28,
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::Y, 6),
+                ),
+                NodeMapping(
+                    Node::Top29,
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::Y, 7),
+                ),
+                NodeMapping(
+                    Node::Bottom2,
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::Y, 1),
+                ),
+                NodeMapping(
+                    Node::Bottom3,
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::Y, 2),
+                ),
+                NodeMapping(
+                    Node::Bottom4,
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::Y, 3),
+                ),
+                NodeMapping(
+                    Node::Bottom5,
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::Y, 4),
+                ),
+                NodeMapping(
+                    Node::Bottom6,
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::Y, 5),
+                ),
+                NodeMapping(
+                    Node::Bottom7,
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::Y, 6),
+                ),
+                NodeMapping(
+                    Node::Bottom8,
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::Y, 7),
+                ),
+                NodeMapping(
+                    Node::Bottom9,
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::Y, 1),
+                ),
+                NodeMapping(
+                    Node::Bottom10,
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::Y, 2),
+                ),
+                NodeMapping(
+                    Node::Bottom11,
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::Y, 3),
+                ),
+                NodeMapping(
+                    Node::Bottom12,
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::Y, 4),
+                ),
+                NodeMapping(
+                    Node::Bottom13,
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::Y, 5),
+                ),
+                NodeMapping(
+                    Node::Bottom14,
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::Y, 6),
+                ),
+                NodeMapping(
+                    Node::Bottom15,
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::Y, 7),
+                ),
+                NodeMapping(
+                    Node::Bottom16,
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::Y, 1),
+                ),
+                NodeMapping(
+                    Node::Bottom17,
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::Y, 2),
+                ),
+                NodeMapping(
+                    Node::Bottom18,
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::Y, 3),
+                ),
+                NodeMapping(
+                    Node::Bottom19,
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::Y, 4),
+                ),
+                NodeMapping(
+                    Node::Bottom20,
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::Y, 5),
+                ),
+                NodeMapping(
+                    Node::Bottom21,
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::Y, 6),
+                ),
+                NodeMapping(
+                    Node::Bottom22,
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::Y, 7),
+                ),
+                NodeMapping(
+                    Node::Bottom23,
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::Y, 1),
+                ),
+                NodeMapping(
+                    Node::Bottom24,
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::Y, 2),
+                ),
+                NodeMapping(
+                    Node::Bottom25,
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::Y, 3),
+                ),
+                NodeMapping(
+                    Node::Bottom26,
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::Y, 4),
+                ),
+                NodeMapping(
+                    Node::Bottom27,
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::Y, 5),
+                ),
+                NodeMapping(
+                    Node::Bottom28,
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::Y, 6),
+                ),
+                NodeMapping(
+                    Node::Bottom29,
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::Y, 7),
+                ),
+                NodeMapping(
+                    Node::NanoA0,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 0),
+                ),
+                NodeMapping(
+                    Node::NanoD1,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 1),
+                ),
+                NodeMapping(
+                    Node::NanoA2,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 2),
+                ),
+                NodeMapping(
+                    Node::NanoD3,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 3),
+                ),
+                NodeMapping(
+                    Node::NanoA4,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 4),
+                ),
+                NodeMapping(
+                    Node::NanoD5,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 5),
+                ),
+                NodeMapping(
+                    Node::NanoA6,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 6),
+                ),
+                NodeMapping(
+                    Node::NanoD7,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 7),
+                ),
+                NodeMapping(
+                    Node::NanoD11,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 8),
+                ),
+                NodeMapping(
+                    Node::NanoD9,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 9),
+                ),
+                NodeMapping(
+                    Node::NanoD13,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 10),
+                ),
+                NodeMapping(
+                    Node::NanoReset,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 11),
+                ),
+                NodeMapping(
+                    Node::Dac05V,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 12),
+                ),
+                NodeMapping(
+                    Node::Adc05V,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 13),
+                ),
+                NodeMapping(
+                    Node::Supply3V3,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 14),
+                ),
+                NodeMapping(
+                    Node::Gnd,
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::X, 15),
+                ),
+                NodeMapping(
+                    Node::NanoD0,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 0),
+                ),
+                NodeMapping(
+                    Node::NanoA1,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 1),
+                ),
+                NodeMapping(
+                    Node::NanoD2,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 2),
+                ),
+                NodeMapping(
+                    Node::NanoA3,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 3),
+                ),
+                NodeMapping(
+                    Node::NanoD4,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 4),
+                ),
+                NodeMapping(
+                    Node::NanoA5,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 5),
+                ),
+                NodeMapping(
+                    Node::NanoD6,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 6),
+                ),
+                NodeMapping(
+                    Node::NanoA7,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 7),
+                ),
+                NodeMapping(
+                    Node::NanoD8,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 8),
+                ),
+                NodeMapping(
+                    Node::NanoD10,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 9),
+                ),
+                NodeMapping(
+                    Node::NanoD12,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 10),
+                ),
+                NodeMapping(
+                    Node::NanoAref,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 11),
+                ),
+                NodeMapping(
+                    Node::Dac18V,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 12),
+                ),
+                NodeMapping(
+                    Node::Adc15V,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 13),
+                ),
+                NodeMapping(
+                    Node::Supply5V,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 14),
+                ),
+                NodeMapping(
+                    Node::Gnd,
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::X, 15),
+                ),
+                NodeMapping(
+                    Node::NanoA0,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 0),
+                ),
+                NodeMapping(
+                    Node::NanoA1,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 1),
+                ),
+                NodeMapping(
+                    Node::NanoA2,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 2),
+                ),
+                NodeMapping(
+                    Node::NanoA3,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 3),
+                ),
+                NodeMapping(
+                    Node::NanoD2,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 4),
+                ),
+                NodeMapping(
+                    Node::NanoD3,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 5),
+                ),
+                NodeMapping(
+                    Node::NanoD4,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 6),
+                ),
+                NodeMapping(
+                    Node::NanoD5,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 7),
+                ),
+                NodeMapping(
+                    Node::NanoD6,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 8),
+                ),
+                NodeMapping(
+                    Node::NanoD7,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 9),
+                ),
+                NodeMapping(
+                    Node::NanoD8,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 10),
+                ),
+                NodeMapping(
+                    Node::NanoD9,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 11),
+                ),
+                NodeMapping(
+                    Node::NanoD10,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 12),
+                ),
+                NodeMapping(
+                    Node::NanoD11,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 13),
+                ),
+                NodeMapping(
+                    Node::NanoD12,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 14),
+                ),
+                NodeMapping(
+                    Node::Adc25V,
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::X, 15),
+                ),
+                NodeMapping(
+                    Node::CurrentSenseMinus,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 0),
+                ),
+                NodeMapping(
+                    Node::CurrentSensePlus,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 1),
+                ),
+                NodeMapping(
+                    Node::Adc05V,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 2),
+                ),
+                NodeMapping(
+                    Node::Adc15V,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 3),
+                ),
+                NodeMapping(
+                    Node::Adc25V,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 4),
+                ),
+                NodeMapping(
+                    Node::Adc38V,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 5),
+                ),
+                NodeMapping(
+                    Node::Dac18V,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 6),
+                ),
+                NodeMapping(
+                    Node::Dac05V,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 7),
+                ),
+                NodeMapping(
+                    Node::Top1,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 8),
+                ),
+                NodeMapping(
+                    Node::Top30,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 9),
+                ),
+                NodeMapping(
+                    Node::Bottom1,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 10),
+                ),
+                NodeMapping(
+                    Node::Bottom30,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 11),
+                ),
+                NodeMapping(
+                    Node::RpUartTx,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 12),
+                ),
+                NodeMapping(
+                    Node::RpUartRx,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 13),
+                ),
+                NodeMapping(
+                    Node::Supply5V,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 14),
+                ),
+                NodeMapping(
+                    Node::RpGpio0,
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::X, 15),
+                ),
+            ],
+            [
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 0),
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::Y, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 1),
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::Y, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 2),
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 3),
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 4),
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 5),
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 6),
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 7),
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 8),
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 9),
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::Y, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 10),
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 11),
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 12),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 13),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 14),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::X, 15),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'A'), Dimension::Y, 0),
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::Y, 0),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 2),
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::Y, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 3),
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::Y, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 4),
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 5),
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 3),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 6),
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 7),
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 3),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 8),
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 9),
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 3),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 10),
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 11),
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::Y, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 12),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 13),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 3),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 14),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::X, 15),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 3),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'B'), Dimension::Y, 0),
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::Y, 1),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 4),
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::Y, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 5),
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::Y, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 6),
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 4),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 7),
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 5),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 8),
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 4),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 9),
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 5),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 10),
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 4),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 11),
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 5),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 12),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 4),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 13),
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::Y, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 14),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 4),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::X, 15),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 5),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'C'), Dimension::Y, 0),
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::Y, 2),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 6),
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::Y, 3),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 7),
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::Y, 3),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 8),
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 6),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 9),
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 7),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 10),
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 6),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 11),
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 7),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 12),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 6),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 13),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 7),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 14),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 6),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::X, 15),
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::Y, 3),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'D'), Dimension::Y, 0),
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::Y, 3),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 1),
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::Y, 4),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 8),
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::Y, 4),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 9),
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::Y, 4),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 10),
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 8),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 11),
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 9),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 12),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 8),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 13),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 9),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 14),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 8),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::X, 15),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 9),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'E'), Dimension::Y, 0),
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::Y, 4),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 3),
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::Y, 5),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 10),
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::Y, 5),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 11),
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::Y, 5),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 12),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 10),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 13),
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 11),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 14),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 10),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::X, 15),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 11),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'F'), Dimension::Y, 0),
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::Y, 5),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 5),
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::Y, 6),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 12),
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::Y, 6),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 13),
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::Y, 6),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 14),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 12),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::X, 15),
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 13),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'G'), Dimension::Y, 0),
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::Y, 6),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 7),
+                    Port::new(ChipId::from_ascii(b'K'), Dimension::Y, 7),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 14),
+                    Port::new(ChipId::from_ascii(b'I'), Dimension::Y, 7),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::X, 15),
+                    Port::new(ChipId::from_ascii(b'J'), Dimension::Y, 7),
+                ),
+                Lane(
+                    Port::new(ChipId::from_ascii(b'H'), Dimension::Y, 0),
+                    Port::new(ChipId::from_ascii(b'L'), Dimension::Y, 7),
+                ),
             ],
         )
     }
@@ -585,7 +1225,8 @@ impl Node {
 
     pub fn pixel(&self) -> Option<u8> {
         use Node::*;
-        if *self as u8 <= 60 { // breadboard node
+        if *self as u8 <= 60 {
+            // breadboard node
             return Some(*self as u8 - 1);
         }
         match self {
@@ -749,4 +1390,3 @@ mod tests {
         assert_eq!(lane_index.lane_index(), Some(27));
     }
 }
-

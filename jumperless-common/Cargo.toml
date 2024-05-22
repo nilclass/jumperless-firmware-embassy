@@ -10,11 +10,13 @@ env_logger = { version = "0.11.3", optional = true }
 heapless = "0.8.0"
 log = "0.4.21"
 
+jumperless-types = { path = "../jumperless-types" }
+
 [[bin]]
 name = "nets-to-chips"
 required-features = ["std"]
 
 [features]
 default = []
-std = []
+std = ["jumperless-types/std"]
 test = ["std", "dep:env_logger"]

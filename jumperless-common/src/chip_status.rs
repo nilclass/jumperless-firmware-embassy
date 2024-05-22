@@ -1,13 +1,6 @@
-use crate::{
-    ChipId,
-    NetId,
-    Dimension,
-    Port,
-    Crosspoint,
-    Lane,
-    util::PortSet,
-    layout,
-};
+use jumperless_types::{set::PortSet, ChipId, Dimension, Lane, NetId, Port};
+
+use crate::{layout, Crosspoint};
 
 /// Assigns a net to every port on every chip.
 ///
@@ -39,10 +32,10 @@ impl ChipStatus {
 
     /// Retrieve net id assigned to given port
     pub fn get(&self, port: Port) -> Option<NetId> {
-        let entry = &self.0[port.0.index()];
-        match port.1 {
-            Dimension::X => entry.x[port.2 as usize],
-            Dimension::Y => entry.y[port.2 as usize],
+        let entry = &self.0[port.chip_id().index()];
+        match port.dimension() {
+            Dimension::X => entry.x[port.index() as usize],
+            Dimension::Y => entry.y[port.index() as usize],
         }
     }
 
@@ -54,10 +47,10 @@ impl ChipStatus {
             panic!("Port already set");
         }
 
-        let entry = &mut self.0[port.0.index()];
-        match port.1 {
-            Dimension::X => entry.x[port.2 as usize] = Some(net),
-            Dimension::Y => entry.y[port.2 as usize] = Some(net),
+        let entry = &mut self.0[port.chip_id().index()];
+        match port.dimension() {
+            Dimension::X => entry.x[port.index() as usize] = Some(net),
+            Dimension::Y => entry.y[port.index() as usize] = Some(net),
         }
         // println!("SET {:?} to {:?}", port, net)
     }
@@ -97,7 +90,11 @@ impl ChipStatus {
     /// Once the walk finds no more paths to follow, we compare the set of ports that were visited by the walk with the set of required ones collected earlier.
     /// If all of the required ports have been visited, then all of them must be connected by at least one path.
     #[cfg(feature = "std")]
-    pub(crate) fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(&self, net_id: NetId, layout: &layout::Layout<NODE_COUNT, LANE_COUNT>) {
+    pub(crate) fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(
+        &self,
+        net_id: NetId,
+        layout: &layout::Layout<NODE_COUNT, LANE_COUNT>,
+    ) {
         // println!("Check connectivity of net {:?}", net_id);
         // contains every port that this net must contain (those that resolve to Nodes)
         let mut required = PortSet::empty();
@@ -144,7 +141,7 @@ impl ChipStatus {
         self.visit_port(first, &mut visited, &mut |port, value| {
             if value == Some(net_id) {
                 if let Some(lane) = layout.port_to_lane(port) {
-                    return Visit::MarkAndFollow(lane.opposite(port))
+                    return Visit::MarkAndFollow(lane.opposite(port));
                 }
                 Visit::Mark
             } else {
@@ -155,7 +152,6 @@ impl ChipStatus {
         // println!("Visited bitmap: {:?}", visited.0);
 
         if !visited.is_superset(&required) {
-
             visited.print_diff(&required);
 
             panic!("Net {:?} is not fully connected", net_id);
@@ -163,7 +159,12 @@ impl ChipStatus {
     }
 
     /// Performs a depth-first search of ports that are connected to the same net, guided by the given `visit` closure.
-    fn visit_port<F: FnMut(Port, Option<NetId>) -> Visit>(&self, start: Port, visited: &mut PortSet, visit: &mut F) {
+    fn visit_port<F: FnMut(Port, Option<NetId>) -> Visit>(
+        &self,
+        start: Port,
+        visited: &mut PortSet,
+        visit: &mut F,
+    ) {
         // println!("Visit port {:?}", start);
         visited.insert(start);
 
@@ -182,18 +183,18 @@ impl ChipStatus {
 
             let net_id = self.get(port);
             match visit(port, net_id) {
-                Visit::Skip => {},
+                Visit::Skip => {}
                 Visit::Mark => {
                     // println!("MARK {:?}", port);
                     marked_orthogonal = true;
                     visited.insert(port);
-                },
+                }
                 Visit::MarkAndFollow(follow) => {
                     // println!("MARK {:?}, FOLLOW {:?}", port, follow);
                     marked_orthogonal = true;
                     visited.insert(port);
                     self.visit_port(follow, visited, visit);
-                },
+                }
             }
         }
 
@@ -206,16 +207,16 @@ impl ChipStatus {
 
                 let net_id = self.get(port);
                 match visit(port, net_id) {
-                    Visit::Skip => {},
+                    Visit::Skip => {}
                     Visit::Mark => {
                         // println!("MARK {:?}", port);
                         visited.insert(port);
-                    },
+                    }
                     Visit::MarkAndFollow(follow) => {
                         // println!("MARK {:?}, FOLLOW {:?}", port, follow);
                         visited.insert(port);
                         self.visit_port(follow, visited, visit);
-                    },
+                    }
                 }
             }
         }
@@ -254,7 +255,7 @@ enum Visit {
 /// Iterator over all connected crosspoints
 ///
 /// Yields all crosspoints that need to be connected.
-pub struct CrosspointIterator<'a>{
+pub struct CrosspointIterator<'a> {
     cs: &'a ChipStatus,
     i: usize,
     x: usize,
@@ -266,16 +267,23 @@ impl<'a> Iterator for CrosspointIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.i == self.cs.0.len() {
-            return None
+            return None;
         }
         let chip_status = &self.cs.0[self.i];
         let chip = ChipId::from_index(self.i);
         // println!("CP {},{},{}", self.i, self.x, self.y);
         if let Some(x_net) = chip_status.x[self.x] {
-            if let Some(y_net) = chip_status.y[self.y] && x_net == y_net {
+            if let Some(y_net) = chip_status.y[self.y]
+                && x_net == y_net
+            {
                 let (x, y) = (self.x as u8, self.y as u8);
                 self.advance_y();
-                Some(Crosspoint { chip, x, y, net_id: x_net })
+                Some(Crosspoint {
+                    chip,
+                    x,
+                    y,
+                    net_id: x_net,
+                })
             } else {
                 self.advance_y();
                 self.next()

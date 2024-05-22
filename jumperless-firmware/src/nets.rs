@@ -1,4 +1,4 @@
-use jumperless_common::{NetId, layout::{Net, Node}};
+use jumperless_common::{types::NetId, layout::{Net, Node}};
 
 use heapless::Vec;
 
