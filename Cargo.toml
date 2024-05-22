@@ -4,6 +4,7 @@ members = [
     "jumperless-firmware",
     "line_buffer",
     "jumperless-common",
+    "jumperless-types",
 ]
 
 [patch.crates-io]
