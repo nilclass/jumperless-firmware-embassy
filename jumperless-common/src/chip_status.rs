@@ -43,7 +43,7 @@ impl ChipStatus {
     ///
     /// Panics if the port is already assigned to a different net.
     pub fn set(&mut self, port: Port, net: NetId) {
-        if let Some(existing) = self.get(port) {
+        if self.get(port).is_some() {
             panic!("Port already set");
         }
 

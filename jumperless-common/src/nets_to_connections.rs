@@ -65,7 +65,7 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
 
             connected_edges.insert(edges.pop().unwrap());
 
-            while edges.len() > 0 {
+            while !edges.is_empty() {
                 // attempt to find a direct lane for one of the edge pairs
                 let mut direct = None;
                 'outer: for unconnected in edges.iter() {

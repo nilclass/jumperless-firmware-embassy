@@ -20,6 +20,9 @@ pub use port::Port;
 mod lane;
 pub use lane::Lane;
 
+mod node;
+pub use node::Node;
+
 pub mod set {
     mod edge_set;
     pub use edge_set::EdgeSet;
@@ -29,4 +32,7 @@ pub mod set {
 
     mod lane_set;
     pub use lane_set::LaneSet;
+
+    mod node_set;
+    pub use node_set::NodeSet;
 }

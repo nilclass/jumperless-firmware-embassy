@@ -1,5 +1,7 @@
 use crate::ChipStatus;
-use jumperless_types::{set::PortSet, ChipId, Dimension, Lane, NetId, Port};
+use jumperless_types::{ChipId, Dimension, Lane, NetId, Port};
+
+pub type NodeSet = jumperless_types::set::NodeSet<Node>;
 
 pub struct NodeMapping(Node, Port);
 
@@ -20,7 +22,7 @@ impl Net {
     pub fn new(id: NetId) -> Self {
         Self {
             id,
-            nodes: NodeSet::new(),
+            nodes: NodeSet::default(),
         }
     }
 
@@ -29,83 +31,6 @@ impl Net {
             id,
             nodes: nodes.collect(),
         }
-    }
-}
-
-#[derive(PartialEq, Eq)]
-pub struct NodeSet([u8; 16]);
-
-impl NodeSet {
-    /// Construct a new (empty) set
-    pub fn new() -> Self {
-        Self([0; 16])
-    }
-
-    /// Number of nodes in this set
-    pub fn len(&self) -> usize {
-        self.0.iter().fold(0, |a, i| a + i.count_ones() as usize)
-    }
-
-    /// Does this set contain given node?
-    pub fn contains(&self, node: Node) -> bool {
-        let (i, j) = Self::address(node);
-        (self.0[i] >> j) & 1 == 1
-    }
-
-    /// Insert given node
-    pub fn insert(&mut self, node: Node) {
-        let (i, j) = Self::address(node);
-        self.0[i] |= 1 << j;
-    }
-
-    /// Remove given node
-    pub fn remove(&mut self, node: Node) {
-        let (i, j) = Self::address(node);
-        self.0[i] &= !(1 << j);
-    }
-
-    /// Iterate over nodes in this set
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Node> + 'a {
-        (0..16).flat_map(move |i| {
-            (0..8).filter_map(move |j| {
-                if (self.0[i] >> j) & 1 == 1 {
-                    // Safety: bits in this set are only set by `insert`, which takes a valid `Node`
-                    Some(unsafe { Node::from_u8((i * 8 + j) as u8) })
-                } else {
-                    None
-                }
-            })
-        })
-    }
-
-    /// Removes all nodes from `self`, and returns a copy of self before the removal
-    pub fn take(&mut self) -> Self {
-        let copy = NodeSet(self.0);
-        self.0.fill(0);
-        copy
-    }
-
-    fn address(node: Node) -> (usize, usize) {
-        let value = node as u8 as usize;
-        (value / 8, value % 8)
-    }
-}
-
-impl FromIterator<Node> for NodeSet {
-    fn from_iter<T: IntoIterator<Item = Node>>(iter: T) -> Self {
-        let mut set = NodeSet::new();
-        for node in iter {
-            set.insert(node);
-        }
-        set
-    }
-}
-
-impl core::fmt::Debug for NodeSet {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.iter()
-            .fold(&mut f.debug_list(), |list, node| list.entry(&node))
-            .finish()
     }
 }
 
@@ -124,7 +49,7 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
         nets: &[Net],
         chip_status: &mut ChipStatus,
     ) -> Result<(), super::nets_to_connections::Error> {
-        super::nets_to_connections(nets.into_iter(), chip_status, &self)
+        super::nets_to_connections(nets.iter(), chip_status, self)
     }
 
     /// Look up port for given node
@@ -161,6 +86,8 @@ impl<const NODE_COUNT: usize, const LANE_COUNT: usize> Layout<NODE_COUNT, LANE_C
     ///
     /// Prints problems to stdout and panics if a check has failed.
     pub fn sanity_check(&self) {
+        use jumperless_types::set::PortSet;
+
         let mut problems = vec![];
         let mut used_ports = PortSet::empty();
         for NodeMapping(node, port) in &self.nodes {
@@ -258,7 +185,7 @@ impl PortMap {
         for NodeMapping(node, port) in nodes {
             m.set_node(*port, *node);
         }
-        for (index, Lane(a, b)) in lanes.into_iter().enumerate() {
+        for (index, Lane(a, b)) in lanes.iter().enumerate() {
             m.set_lane_index(*a, index);
             m.set_lane_index(*b, index);
         }
@@ -1216,6 +1143,17 @@ pub enum Node {
     RpGpio0 = 114,
     RpUartTx = 116,
     RpUartRx = 117,
+}
+
+impl jumperless_types::Node for Node {
+    fn id(&self) -> u8 {
+        *self as u8
+    }
+
+    fn from_id(id: u8) -> Self {
+        // FIXME: use a (generated) match statement instead, and panic when given an invalid ID
+        unsafe { core::mem::transmute(id) }
+    }
 }
 
 impl Node {

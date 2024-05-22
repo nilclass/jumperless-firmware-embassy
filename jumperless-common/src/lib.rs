@@ -1,11 +1,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![feature(let_chains)]
 
-use jumperless_types::{ChipId, Dimension, Lane, NetId, Port};
+use jumperless_types::{ChipId, NetId};
 
 pub use jumperless_types as types;
-
-use core::num::NonZeroU8;
 
 pub mod layout;
 
@@ -115,6 +113,7 @@ impl CrosspointConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jumperless_types::Port;
     use layout::{Layout, Net, Node};
 
     fn setup() {

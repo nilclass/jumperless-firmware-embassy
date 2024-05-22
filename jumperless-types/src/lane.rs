@@ -3,7 +3,7 @@ use crate::{Edge, Port};
 /// A Lane is a physical connection between two ports (on distinct chips)
 #[derive(Copy, Clone)]
 #[cfg_attr(feature = "std", derive(Debug))]
-pub struct Lane(pub Port,  pub Port);
+pub struct Lane(pub Port, pub Port);
 
 impl Lane {
     /// Is one of the ports of this lane on the given edge?
