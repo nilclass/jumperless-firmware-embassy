@@ -7,6 +7,8 @@ pub use jumperless_types as types;
 
 pub mod layout;
 
+pub mod board;
+
 mod chip_status;
 pub use chip_status::ChipStatus;
 

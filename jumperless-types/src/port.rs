@@ -9,6 +9,7 @@ pub struct Port(ChipId, Dimension, u8);
 impl Port {
     /// Construct port for given chip, dimension and index
     pub fn new(chip_id: ChipId, dimension: Dimension, index: u8) -> Self {
+        assert!(index < dimension.port_count());
         Self(chip_id, dimension, index)
     }
 

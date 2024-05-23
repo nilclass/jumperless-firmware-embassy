@@ -16,6 +16,9 @@ impl Dimension {
         }
     }
 
+    /// Index of this dimension within data structures
+    ///
+    /// X is 0, Y is 1.
     pub fn index(&self) -> usize {
         match self {
             Dimension::X => 0,
@@ -23,6 +26,7 @@ impl Dimension {
         }
     }
 
+    /// Turn an index (0 or 1) into a dimension (X or Y)
     pub fn from_index(index: usize) -> Self {
         match index {
             0 => Dimension::X,
@@ -31,6 +35,9 @@ impl Dimension {
         }
     }
 
+    /// Number of ports that a chip has in this dimension
+    ///
+    /// 16 for X, 8 for Y.
     pub fn port_count(&self) -> u8 {
         match self {
             Dimension::X => 16,

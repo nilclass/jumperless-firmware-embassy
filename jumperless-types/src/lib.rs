@@ -23,6 +23,9 @@ pub use lane::Lane;
 mod node;
 pub use node::Node;
 
+pub mod board_spec;
+pub mod board;
+
 pub mod set {
     mod edge_set;
     pub use edge_set::EdgeSet;
@@ -35,4 +38,9 @@ pub mod set {
 
     mod node_set;
     pub use node_set::NodeSet;
+}
+
+pub mod map {
+    mod port_map;
+    pub use port_map::PortMap;
 }

@@ -1327,4 +1327,32 @@ mod tests {
         assert_eq!(lane_index.node(), None);
         assert_eq!(lane_index.lane_index(), Some(27));
     }
+
+    #[test]
+    fn test_write_layout_to_files() {
+        use std::fs::File;
+        use std::io::Write;
+        let layout = Layout::v4();
+
+        let format_port = |port: Port| format!(
+            "{}{}{}",
+            port.chip_id().ascii() as char,
+            match port.dimension() { Dimension::X => 'x', Dimension::Y => 'y', _ => unreachable!() },
+            port.index(),
+        );
+
+        let mut nodes = File::create("nodes.txt").unwrap();
+
+        for NodeMapping(node, port) in &layout.nodes {
+            writeln!(nodes, "{:?}:{}", node, format_port(*port)).unwrap();
+        }
+
+        let mut lanes = File::create("lanes.txt").unwrap();
+
+        for Lane(a, b) in &layout.lanes {
+            writeln!(lanes, "{}:{}", format_port(*a), format_port(*b)).unwrap();
+        }
+
+        std::fs::write("bounceports.txt", "").unwrap();
+    }
 }

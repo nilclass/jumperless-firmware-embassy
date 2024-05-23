@@ -6,7 +6,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+proc-macro2 = { version = "1.0", optional = true }
+quote = { version = "1.0", optional = true }
+syn = { version = "1.0", optional = true }
 
 [features]
 default = []
 std = []
+board-spec-generator = ["std", "dep:quote", "dep:proc-macro2", "dep:syn"]
+
+[[bin]]
+name = "board-spec-code-generator"
+required-features = ["board-spec-generator"]

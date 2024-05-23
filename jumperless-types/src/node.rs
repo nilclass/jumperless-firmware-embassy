@@ -1,7 +1,7 @@
 /// Common trait for Nodes.
 ///
 /// Concrete node types are board-specific, and implement this trait.
-pub trait Node: Copy + core::fmt::Debug {
+pub trait Node: Copy + core::fmt::Debug + PartialEq + Eq {
     /// Identifier of a Node
     ///
     /// Must be `<= 127`.

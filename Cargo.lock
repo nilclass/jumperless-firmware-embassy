@@ -892,6 +892,11 @@ dependencies = [
 [[package]]
 name = "jumperless-types"
 version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
 
 [[package]]
 name = "lalrpop"

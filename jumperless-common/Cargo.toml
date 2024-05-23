@@ -18,5 +18,7 @@ required-features = ["std"]
 
 [features]
 default = []
+board-v4 = []
+board-v5 = []
 std = ["jumperless-types/std"]
 test = ["std", "dep:env_logger"]
