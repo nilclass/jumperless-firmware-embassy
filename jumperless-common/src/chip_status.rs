@@ -1,6 +1,6 @@
-use jumperless_types::{set::PortSet, ChipId, Dimension, Lane, NetId, Port};
+use jumperless_types::{ChipId, Dimension, Lane, NetId, Port};
 
-use crate::{layout, Crosspoint};
+use crate::Crosspoint;
 
 /// Assigns a net to every port on every chip.
 ///
@@ -90,11 +90,13 @@ impl ChipStatus {
     /// Once the walk finds no more paths to follow, we compare the set of ports that were visited by the walk with the set of required ones collected earlier.
     /// If all of the required ports have been visited, then all of them must be connected by at least one path.
     #[cfg(feature = "std")]
-    pub(crate) fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(
+    pub(crate) fn check_connectivity(
         &self,
         net_id: NetId,
-        layout: &layout::Layout<NODE_COUNT, LANE_COUNT>,
+        board: &crate::board::Board,
     ) {
+        use jumperless_types::set::PortSet;
+
         // println!("Check connectivity of net {:?}", net_id);
         // contains every port that this net must contain (those that resolve to Nodes)
         let mut required = PortSet::empty();
@@ -106,7 +108,7 @@ impl ChipStatus {
             for (x, value) in chip_status.x.iter().enumerate() {
                 if *value == Some(net_id) {
                     let port = chip.port_x(x as u8);
-                    if layout.port_to_node(port).is_some() {
+                    if board.port_to_node(port).is_some() {
                         // println!("REQUIRED: {:?}", port);
                         required.insert(port);
                         if first.is_none() {
@@ -118,7 +120,7 @@ impl ChipStatus {
             for (y, value) in chip_status.y.iter().enumerate() {
                 if *value == Some(net_id) {
                     let port = chip.port_y(y as u8);
-                    if layout.port_to_node(port).is_some() {
+                    if board.port_to_node(port).is_some() {
                         // println!("REQUIRED: {:?}", port);
                         required.insert(port);
                         if first.is_none() {
@@ -140,7 +142,7 @@ impl ChipStatus {
 
         self.visit_port(first, &mut visited, &mut |port, value| {
             if value == Some(net_id) {
-                if let Some(lane) = layout.port_to_lane(port) {
+                if let Some(lane) = board.port_to_lane(port) {
                     return Visit::MarkAndFollow(lane.opposite(port));
                 }
                 Visit::Mark
@@ -158,11 +160,12 @@ impl ChipStatus {
         }
     }
 
+    #[cfg(feature = "std")]
     /// Performs a depth-first search of ports that are connected to the same net, guided by the given `visit` closure.
     fn visit_port<F: FnMut(Port, Option<NetId>) -> Visit>(
         &self,
         start: Port,
-        visited: &mut PortSet,
+        visited: &mut jumperless_types::set::PortSet,
         visit: &mut F,
     ) {
         // println!("Visit port {:?}", start);
@@ -223,6 +226,7 @@ impl ChipStatus {
     }
 }
 
+#[cfg(feature = "std")]
 enum Visit {
     Skip,
     Mark,

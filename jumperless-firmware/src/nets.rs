@@ -1,4 +1,4 @@
-use jumperless_common::{types::NetId, layout::{Net, Node}};
+use jumperless_common::{types::NetId, board::Node, types::Net};
 
 use heapless::Vec;
 
@@ -6,7 +6,7 @@ const MAX_NETS: usize = 64;
 
 pub struct Nets {
     pub supply_switch_pos: SupplySwitchPos,
-    pub nets: Vec<Net, MAX_NETS>,
+    pub nets: Vec<Net<Node>, MAX_NETS>,
     pub colors: Vec<(u8, u8, u8), MAX_NETS>,
 }
 
@@ -72,13 +72,21 @@ impl Default for Nets {
             colors: Vec::new(),
         };
 
-        nets.add_net([Node::Gnd], (0x00, 0x1c, 0x04));
-        nets.add_net([Node::Supply5V], (0x1c, 0x07, 0x02));
-        nets.add_net([Node::Supply3V3], (0x1c, 0x01, 0x07));
-        nets.add_net([Node::Dac05V], (0x23, 0x11, 0x11));
-        nets.add_net([Node::Dac18V], (0x23, 0x09, 0x13));
-        nets.add_net([Node::CurrentSensePlus], (0x23, 0x23, 0x23));
-        nets.add_net([Node::CurrentSenseMinus], (0x23, 0x23, 0x23));
+        nets.add_net([Node::GND], (0x00, 0x1c, 0x04));
+        #[cfg(feature = "board-v4")]
+        {
+            nets.add_net([Node::SUPPLY_5V], (0x1c, 0x07, 0x02));
+            nets.add_net([Node::SUPPLY_3V3], (0x1c, 0x01, 0x07));
+        }
+        #[cfg(feature = "board-v5")]
+        {
+            nets.add_net([Node::TOP_RAIL], (0x30, 0x1A, 0x02));
+            nets.add_net([Node::BOTTOM_RAIL], (0x12, 0x09, 0x32));
+        }
+        nets.add_net([Node::DAC0], (0x23, 0x11, 0x11));
+        nets.add_net([Node::DAC1], (0x23, 0x09, 0x13));
+        nets.add_net([Node::ISENSE_PLUS], (0x23, 0x23, 0x23));
+        nets.add_net([Node::ISENSE_MINUS], (0x23, 0x23, 0x23));
         // nets.add_net([Node::Top2, Node::Top3], (0x13, 0x00, 0x23));
 
         nets

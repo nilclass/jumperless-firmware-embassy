@@ -1,11 +1,10 @@
-use crate::{
-    layout::{Layout, Net},
-    ChipStatus,
-};
+use crate::ChipStatus;
+
+use crate::board::{Board, Node};
 
 use jumperless_types::{
-    set::{EdgeSet, LaneSet},
-    Edge, NetId,
+    set::{EdgeSet, LaneSet, PortSet},
+    Edge, NetId, Net,
 };
 
 use heapless::Vec;
@@ -20,11 +19,11 @@ pub enum Error {
 
 /// Turn given list of `nets` into connections. The connections are made by modifying the given `chip_status` (which is expected to be empty to begin with).
 ///
-/// The layout is used to map nodes to ports and to locate lanes between chips.
-pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>(
-    nets: impl Iterator<Item = &'a Net>,
+/// The board is used to map nodes to ports and to locate lanes between chips.
+pub fn nets_to_connections<'a>(
+    nets: impl Iterator<Item = &'a Net<Node>>,
     chip_status: &mut ChipStatus,
-    layout: &Layout<NODE_COUNT, LANE_COUNT>,
+    board: &Board,
 ) -> Result<(), Error> {
     // list of edges that need to be connected at the very end (these are for nets which are only on a single chip)
     let mut pending_edge_nets: Vec<(Edge, NetId), MAX_NETS> = Vec::new();
@@ -32,7 +31,9 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
     let mut pending_bounces: Vec<(Edge, Edge, NetId), MAX_NETS> = Vec::new();
 
     // set of lanes that are available (initially all of them, we take them away as they are being assigned to nets)
-    let mut lanes = LaneSet::new(&layout.lanes);
+    let mut lanes = LaneSet::new(board.lanes());
+    // set of available bounce ports
+    let mut bounce_ports: PortSet = board.bounce_ports().iter().copied().collect();
 
     // For now, just go net-by-net, in the order they are given. Later on this could become more clever and route more complex nets first.
     for net in nets {
@@ -45,7 +46,7 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
         let mut edges = EdgeSet::empty();
 
         for node in net.nodes.iter() {
-            let port = layout.node_to_port(node).unwrap();
+            let port = board.node_to_port(node).unwrap();
 
             // mark each port as belonging to this net
             chip_status.set(port, net.id);
@@ -55,7 +56,7 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
         }
 
         if edges.len() == 1 {
-            // single-chip net. Will be connected at the very end, using an arbitrary free lane port.
+            // single-chip net. Will be connected at the very end, using an arbitrary free bounce or lane port.
             pending_edge_nets
                 .push((edges.pop().unwrap(), net.id))
                 .ok()
@@ -113,19 +114,19 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
             let mut success = false;
 
             'outer: for port in edge_a.ports() {
-                if let Some(index0) = layout.port_map.get_lane_index(port)
+                if let Some(index0) = board.port_map().get_lane_index(port)
                     && lanes.has_index(index0)
                 {
-                    let lane0 = layout.lanes[index0];
+                    let lane0 = board.lanes()[index0];
                     // destination edge on the target chip of lane0
                     let dest0_edge = lane0.opposite(port).edge();
 
                     // first check if there is an orthogonal lane leading to edge B
                     for port in dest0_edge.orthogonal().ports() {
-                        if let Some(index1) = layout.port_map.get_lane_index(port)
+                        if let Some(index1) = board.port_map().get_lane_index(port)
                             && lanes.has_index(index1)
                         {
-                            let lane1 = layout.lanes[index1];
+                            let lane1 = board.lanes()[index1];
                             let dest1_edge = lane1.opposite(port).edge();
 
                             if dest1_edge == edge_b {
@@ -145,20 +146,31 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
 
                     // next check if there is a lane on the same edge, leading to edge B
                     for port in dest0_edge.ports() {
-                        if let Some(index1) = layout.port_map.get_lane_index(port)
+                        if let Some(index1) = board.port_map().get_lane_index(port)
                             && lanes.has_index(index1)
                         {
-                            let lane1 = layout.lanes[index1];
+                            let lane1 = board.lanes()[index1];
                             let dest1_edge = lane1.opposite(port).edge();
 
                             if dest1_edge == edge_b {
-                                // found an adjacent edge that goes to the right place.
-                                // now find an orthogonal edge to this adjacent one, to complete the bounce
+                                // found an adjacent lane that goes to the right place.
+                                // now find a bounce or lane port on the orthogonal edge to this common one, to complete the bounce
                                 for port in dest0_edge.orthogonal().ports() {
-                                    if let Some(index2) = layout.port_map.get_lane_index(port)
+                                    if bounce_ports.contains(port) {
+                                        chip_status.set_lane(lane0, net_id);
+                                        chip_status.set_lane(lane1, net_id);
+                                        chip_status.set(port, net_id);
+
+                                        lanes.clear_index(index0);
+                                        lanes.clear_index(index1);
+                                        bounce_ports.remove(port);
+
+                                        success = true;
+                                        break 'outer;
+                                    } else if let Some(index2) = board.port_map().get_lane_index(port)
                                         && lanes.has_index(index2)
                                     {
-                                        let lane2 = layout.lanes[index2];
+                                        let lane2 = board.lanes()[index2];
                                         chip_status.set_lane(lane0, net_id);
                                         chip_status.set_lane(lane1, net_id);
                                         chip_status.set_lane(lane2, net_id);
@@ -183,9 +195,11 @@ pub fn nets_to_connections<'a, const NODE_COUNT: usize, const LANE_COUNT: usize>
         }
     }
 
-    // Connect the remaining edges
+    // Connect the remaining edges with bounce ports or free lane endpoints
     for (edge, net_id) in pending_edge_nets {
-        if let Some(lane) = lanes.take(|lane| lane.touches(edge)) {
+        if let Some(bounce_port) = bounce_ports.take_from_edge(edge) {
+            chip_status.set(bounce_port, net_id);
+        } else if let Some(lane) = lanes.take(|lane| lane.touches(edge)) {
             chip_status.set_lane(lane, net_id);
         } else {
             return Err(Error::MissingPort(net_id, edge));

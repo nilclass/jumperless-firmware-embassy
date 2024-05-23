@@ -5,8 +5,6 @@ use jumperless_types::{ChipId, NetId};
 
 pub use jumperless_types as types;
 
-pub mod layout;
-
 pub mod board;
 
 mod chip_status;
@@ -115,8 +113,8 @@ impl CrosspointConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jumperless_types::Port;
-    use layout::{Layout, Net, Node};
+    use jumperless_types::{Port, Net};
+    use crate::board::{Board, Node};
 
     fn setup() {
         _ = env_logger::builder().is_test(true).try_init();
@@ -138,9 +136,9 @@ mod tests {
                     id: 1.into(),
                     nodes: vec![
                         // Ix15
-                        Node::Gnd,
+                        Node::GND,
                         // Ay1
-                        Node::Top2,
+                        Node::_2,
                     ]
                     .into_iter()
                     .collect(),
@@ -150,9 +148,9 @@ mod tests {
                     id: 2.into(),
                     nodes: vec![
                         // Ay6
-                        Node::Top7,
+                        Node::_7,
                         // Ay7
-                        Node::Top8,
+                        Node::_8,
                     ]
                     .into_iter()
                     .collect(),
@@ -203,9 +201,9 @@ mod tests {
                     id: 1.into(),
                     nodes: vec![
                         // Lx8
-                        Node::Top1,
+                        Node::_1,
                         // Ay1
-                        Node::Top2,
+                        Node::_2,
                     ]
                     .into_iter()
                     .collect(),
@@ -247,16 +245,16 @@ mod tests {
                 // exhaust direct lanes between A and B
                 Net {
                     id: 1.into(),
-                    nodes: vec![Node::Top2, Node::Top9].into_iter().collect(),
+                    nodes: vec![Node::_2, Node::_9].into_iter().collect(),
                 },
                 Net {
                     id: 2.into(),
-                    nodes: vec![Node::Top3, Node::Top10].into_iter().collect(),
+                    nodes: vec![Node::_3, Node::_10].into_iter().collect(),
                 },
                 // this one will need to be bounced via another chip
                 Net {
                     id: 3.into(),
-                    nodes: vec![Node::Top4, Node::Top11].into_iter().collect(),
+                    nodes: vec![Node::_4, Node::_11].into_iter().collect(),
                 },
             ],
             &[
@@ -326,19 +324,19 @@ mod tests {
                 id: 1.into(),
                 nodes: vec![
                     // Dy1
-                    Node::Top23,
+                    Node::_23,
                     // Dy2
-                    Node::Top24,
+                    Node::_24,
                     // Dy3
-                    Node::Top25,
+                    Node::_25,
                     // Dy4
-                    Node::Top26,
+                    Node::_26,
                     // Dy5
-                    Node::Top27,
+                    Node::_27,
                     // Dy6
-                    Node::Top28,
+                    Node::_28,
                     // Dy7
-                    Node::Top29,
+                    Node::_29,
                 ]
                 .into_iter()
                 .collect(),
@@ -406,13 +404,13 @@ mod tests {
                     id: 1.into(),
                     nodes: vec![
                         // Jx14
-                        Node::Supply5V,
+                        Node::SUPPLY_5V,
                         // Ay2
-                        Node::Top3,
+                        Node::_3,
                         // Ay3
-                        Node::Top4,
+                        Node::_4,
                         // Ey4
-                        Node::Bottom5,
+                        Node::_35,
                     ]
                     .into_iter()
                     .collect(),
@@ -465,40 +463,39 @@ mod tests {
         );
     }
 
-    fn test_netlist(nets: &mut [Net], expected_crosspoints: &[Crosspoint]) {
+    fn test_netlist(nets: &mut [Net<Node>], expected_crosspoints: &[Crosspoint]) {
         // normalize nets, to make it comparisons easier
         normalize_nets(nets);
 
-        let layout = Layout::v4();
-        layout.sanity_check();
+        let board = crate::board::init_board();
 
         // create chip status from netlist
         let mut chip_status = ChipStatus::default();
-        layout.nets_to_connections(nets, &mut chip_status).unwrap();
+        nets_to_connections(nets.iter(), &mut chip_status, &board).unwrap();
 
         print_crosspoints(chip_status.crosspoints());
 
         // reconstruct netlist from ChipStatus, and compare it with the input
-        let extracted_nets = node_nets_from_chip_status(&chip_status, &layout);
+        let extracted_nets = node_nets_from_chip_status(&chip_status, &board);
         assert_eq!(nets, &extracted_nets[..]);
 
         // verify that the ChipStatus is sound given the the list of nets.
         // this ensures that each net is fully connected (no disjoint islands)
-        check_connectivity(&chip_status, nets, &layout);
+        check_connectivity(&chip_status, nets, &board);
 
         // finally verify that the netlist lead to the expected crosspoint connections
         let crosspoints: Vec<_> = chip_status.crosspoints().collect();
         assert_eq!(&crosspoints[..], expected_crosspoints);
     }
 
-    fn node_nets_from_chip_status<const NODE_COUNT: usize, const LANE_COUNT: usize>(
+    fn node_nets_from_chip_status(
         chip_status: &ChipStatus,
-        layout: &Layout<NODE_COUNT, LANE_COUNT>,
-    ) -> Vec<Net> {
+        board: &Board,
+    ) -> Vec<Net<Node>> {
         let mut nets = std::collections::HashMap::new();
         for port in Port::all() {
             if let Some(net_id) = chip_status.get(port) {
-                if let Some(node) = layout.port_to_node(port) {
+                if let Some(node) = board.port_to_node(port) {
                     nets.entry(net_id)
                         .or_insert(Net::new(net_id))
                         .nodes
@@ -507,18 +504,18 @@ mod tests {
             }
         }
 
-        let mut nets: Vec<Net> = nets.into_values().collect();
+        let mut nets: Vec<Net<Node>> = nets.into_values().collect();
         normalize_nets(&mut nets);
         nets
     }
 
-    fn check_connectivity<const NODE_COUNT: usize, const LANE_COUNT: usize>(
+    fn check_connectivity(
         chip_status: &ChipStatus,
-        nets: &[Net],
-        layout: &Layout<NODE_COUNT, LANE_COUNT>,
+        nets: &[Net<Node>],
+        board: &Board,
     ) {
         for net in nets {
-            chip_status.check_connectivity(net.id, layout);
+            chip_status.check_connectivity(net.id, board);
         }
     }
 
@@ -526,7 +523,7 @@ mod tests {
     ///
     /// A normalized netlist has all nets ordered by ID,
     /// and all nodes within each net ordered by node number.
-    fn normalize_nets(nets: &mut [Net]) {
+    fn normalize_nets(nets: &mut [Net<Node>]) {
         nets.sort_by_key(|net| net.id.index());
     }
 }

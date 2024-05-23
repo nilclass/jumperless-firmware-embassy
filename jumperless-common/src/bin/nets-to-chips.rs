@@ -1,12 +1,15 @@
 use std::{env::args, process::exit};
 
 use jumperless_common::{
-    layout::{Layout, Net},
     ChipStatus, CrosspointConfig,
+    board::{init_board, Node},
+    types::Net,
+    nets_to_connections,
+    print_crosspoints,
 };
 
 fn main() {
-    let nets: Vec<_> = args()
+    let nets: Vec<Net<Node>> = args()
         .skip(1)
         .enumerate()
         .map(|(i, arg)| Net {
@@ -23,11 +26,13 @@ fn main() {
         exit(-1);
     }
 
-    let layout = Layout::v4();
+    let board = init_board();
 
     let mut chip_status = ChipStatus::default();
 
-    layout.nets_to_connections(&nets, &mut chip_status).unwrap();
+    nets_to_connections(nets.iter(), &mut chip_status, &board).unwrap();
+
+    print_crosspoints(chip_status.crosspoints());
 
     let crosspoint_config: CrosspointConfig = chip_status.crosspoints().collect();
 

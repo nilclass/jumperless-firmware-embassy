@@ -1,4 +1,4 @@
-use crate::Port;
+use crate::{Port, Edge};
 
 /// A set of [`crate::Port`]s. Implemented as a bitmap.
 ///
@@ -45,6 +45,17 @@ impl PortSet {
         true
     }
 
+    /// Take (remove and return) the first port in this set that is on the given edge
+    pub fn take_from_edge(&mut self, edge: Edge) -> Option<Port> {
+        for port in edge.ports() {
+            if self.contains(port) {
+                self.remove(port);
+                return Some(port);
+            }
+        }
+        None
+    }
+
     #[cfg(feature = "std")]
     pub fn print_diff(&self, other: &Self) {
         use crate::ChipId;
@@ -80,5 +91,15 @@ impl PortSet {
         let bit_address =
             port.chip_id().index() * 24 + port.dimension().index() * 16 + port.index() as usize;
         (bit_address / 8, bit_address % 8)
+    }
+}
+
+impl FromIterator<Port> for PortSet {
+    fn from_iter<T: IntoIterator<Item = Port>>(iter: T) -> Self {
+        let mut set = PortSet::empty();
+        for port in iter {
+            set.insert(port);
+        }
+        set
     }
 }

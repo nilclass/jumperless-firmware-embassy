@@ -46,3 +46,7 @@ nom = { version = "7.1.3", default-features = false }
 
 line_buffer = { path = "../line_buffer" }
 jumperless-common = { path = "../jumperless-common" }
+
+[features]
+board-v4 = ["jumperless-common/board-v4"]
+board-v5 = ["jumperless-common/board-v5"]

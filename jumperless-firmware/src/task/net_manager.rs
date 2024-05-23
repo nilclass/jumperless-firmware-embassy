@@ -6,7 +6,8 @@ use embassy_sync::{
 };
 use embassy_time::Timer;
 use jumperless_common::{
-    layout::{Layout, Node},
+    nets_to_connections,
+    board::{init_board, Board, Node},
     ChipStatus,
 };
 use rand::{Rng, SeedableRng};
@@ -27,7 +28,7 @@ impl bus::BusMessage for Message {
 
 #[embassy_executor::task]
 pub async fn main(mut chips: Ch446q<'static, PIO1, 0>) {
-    let layout = Layout::v4();
+    let board = init_board();
     let mut chip_status = ChipStatus::default();
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     loop {
@@ -35,13 +36,13 @@ pub async fn main(mut chips: Ch446q<'static, PIO1, 0>) {
             Message::Reset => {
                 if let Some(nets) = NETS.lock().await.as_mut() {
                     *nets = Nets::default();
-                    update_chips(nets, &mut chip_status, &mut chips, &layout).await;
+                    update_chips(nets, &mut chip_status, &mut chips, &board).await;
                 }
             }
             Message::AddBridge(a, b) => {
                 if let Some(nets) = NETS.lock().await.as_mut() {
                     add_bridge(nets, a, b, &mut rng);
-                    update_chips(nets, &mut chip_status, &mut chips, &layout).await;
+                    update_chips(nets, &mut chip_status, &mut chips, &board).await;
                 }
             }
         }
@@ -75,10 +76,10 @@ fn add_bridge(nets: &mut Nets, a: Node, b: Node, rng: &mut SmallRng) {
     }
 }
 
-async fn update_chips<const NODE_COUNT: usize, const LANE_COUNT: usize>(nets: &Nets, chip_status: &mut ChipStatus, chips: &mut Ch446q<'static, PIO1, 0>, layout: &Layout<NODE_COUNT, LANE_COUNT>) {
+async fn update_chips(nets: &Nets, chip_status: &mut ChipStatus, chips: &mut Ch446q<'static, PIO1, 0>, board: &Board) {
     defmt::info!("Nets changed, recomputing connections");
     chip_status.clear();
-    match layout.nets_to_connections(&nets.nets, chip_status) {
+    match nets_to_connections(nets.nets.iter(), chip_status, &board) {
         Ok(_) => {
             defmt::info!("Connections computed");
             let mut current_chip = None;

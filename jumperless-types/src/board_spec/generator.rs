@@ -166,6 +166,7 @@ pub fn generate_board_spec_code(board_spec: &DynBoardSpec) -> TokenStream {
 
     let mut variants = vec![];
     let mut as_str_arms = vec![];
+    let mut from_str_arms = vec![];
 
     let mut node_tokens = HashMap::new();
 
@@ -181,6 +182,7 @@ pub fn generate_board_spec_code(board_spec: &DynBoardSpec) -> TokenStream {
         let full_variant = quote!(Node::#variant_token);
         variants.push(quote!(#variant_token = #id));
         as_str_arms.push(quote!(#full_variant => #name_lit));
+        from_str_arms.push(quote!(#name_lit => Ok(#full_variant)));
         node_tokens.insert(id, full_variant);
     }
 
@@ -243,7 +245,7 @@ pub fn generate_board_spec_code(board_spec: &DynBoardSpec) -> TokenStream {
                 if id >= #node_count_u8 {
                     panic!("node id out of range");
                 }
-                unsafe { std::mem::transmute(id) }
+                unsafe { core::mem::transmute(id) }
             }
         }
 
@@ -251,6 +253,20 @@ pub fn generate_board_spec_code(board_spec: &DynBoardSpec) -> TokenStream {
             pub fn as_str(&self) -> &'static str {
                 match self {
                     #(#as_str_arms),*
+                }
+            }
+        }
+
+        #[derive(Debug)]
+        pub struct InvalidNode;
+
+        impl core::str::FromStr for Node {
+            type Err = InvalidNode;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    #(#from_str_arms),*,
+                    _ => Err(InvalidNode),
                 }
             }
         }

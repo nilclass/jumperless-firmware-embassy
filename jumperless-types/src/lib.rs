@@ -8,6 +8,9 @@ pub use chip_id::ChipId;
 mod net_id;
 pub use net_id::NetId;
 
+mod net;
+pub use net::Net;
+
 mod dimension;
 pub use dimension::Dimension;
 

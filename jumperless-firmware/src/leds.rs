@@ -8,6 +8,7 @@ use embassy_time::{Duration, Timer};
 use fixed::types::U24F8;
 use fixed_macro::fixed;
 use micromath::F32Ext;
+use jumperless_common::{board::Node, types::Node as NodeTrait};
 
 const DEFAULTBRIGHTNESS: i32 = 32;
 
@@ -150,7 +151,7 @@ impl<'d, P: Instance, const S: usize, const N: usize> Leds<'d, P, S, N> {
 
         for net in &nets.nets {
             for node in net.nodes.iter() {
-                if let Some(pixel) = node.pixel() {
+                if let Some(pixel) = node_pixel(node) {
                     self.set_rgb8(pixel as usize, nets.color(net.id));
                 }
             }
@@ -290,4 +291,48 @@ pub fn hsv_to_rgb(c: (f32, f32, f32)) -> (f32, f32, f32) {
 
 pub fn mix(a: f32, b: f32, t: f32) -> f32 {
     a * (1. - t) + b * t
+}
+
+#[cfg(feature = "board-v5")]
+fn node_pixel(_node: Node) -> Option<u8> {
+    // FIXME: implement LED stuff for V5
+    None
+}
+
+#[cfg(feature = "board-v4")]
+fn node_pixel(node: Node) -> Option<u8> {
+    if node.id() < 60 {
+        // breadboard node
+        return Some(node.id());
+    }
+    use Node::*;
+    match node {
+        NANO_D0 => Some(81),
+        NANO_D1 => Some(80),
+        NANO_D2 => Some(84),
+        NANO_D3 => Some(85),
+        NANO_D4 => Some(86),
+        NANO_D5 => Some(87),
+        NANO_D6 => Some(88),
+        NANO_D7 => Some(89),
+        NANO_D8 => Some(90),
+        NANO_D9 => Some(91),
+        NANO_D10 => Some(92),
+        NANO_D11 => Some(93),
+        NANO_D12 => Some(94),
+        NANO_D13 => Some(95),
+        // (96 is 3V3)
+        NANO_AREF => Some(97),
+        NANO_A0 => Some(98),
+        NANO_A1 => Some(99),
+        NANO_A2 => Some(100),
+        NANO_A3 => Some(101),
+        NANO_A4 => Some(102),
+        NANO_A5 => Some(103),
+        NANO_A6 => Some(104),
+        NANO_A7 => Some(105),
+        // (106 is 5V)
+        NANO_RESET => Some(107),
+        _ => None,
+    }
 }

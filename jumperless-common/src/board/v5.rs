@@ -19,7 +19,7 @@ use jumperless_types::{board_spec::NodePort, ChipId, Dimension, Lane, Node as No
 #[allow(non_camel_case_types)]
 pub enum Node {
     GND = 0u8,
-    SUPPLY_5v = 1u8,
+    SUPPLY_5V = 1u8,
     _1 = 2u8,
     _2 = 3u8,
     _3 = 4u8,
@@ -134,14 +134,14 @@ impl NodeTrait for Node {
         if id >= 107u8 {
             panic!("node id out of range");
         }
-        unsafe { std::mem::transmute(id) }
+        unsafe { core::mem::transmute(id) }
     }
 }
 impl Node {
     pub fn as_str(&self) -> &'static str {
         match self {
             Node::GND => "GND",
-            Node::SUPPLY_5v => "SUPPLY_5v",
+            Node::SUPPLY_5V => "SUPPLY_5V",
             Node::_1 => "1",
             Node::_2 => "2",
             Node::_3 => "3",
@@ -250,6 +250,123 @@ impl Node {
         }
     }
 }
+#[derive(Debug)]
+pub struct InvalidNode;
+impl core::str::FromStr for Node {
+    type Err = InvalidNode;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "GND" => Ok(Node::GND),
+            "SUPPLY_5V" => Ok(Node::SUPPLY_5V),
+            "1" => Ok(Node::_1),
+            "2" => Ok(Node::_2),
+            "3" => Ok(Node::_3),
+            "4" => Ok(Node::_4),
+            "5" => Ok(Node::_5),
+            "6" => Ok(Node::_6),
+            "7" => Ok(Node::_7),
+            "8" => Ok(Node::_8),
+            "9" => Ok(Node::_9),
+            "10" => Ok(Node::_10),
+            "11" => Ok(Node::_11),
+            "12" => Ok(Node::_12),
+            "13" => Ok(Node::_13),
+            "14" => Ok(Node::_14),
+            "15" => Ok(Node::_15),
+            "16" => Ok(Node::_16),
+            "17" => Ok(Node::_17),
+            "18" => Ok(Node::_18),
+            "19" => Ok(Node::_19),
+            "20" => Ok(Node::_20),
+            "21" => Ok(Node::_21),
+            "22" => Ok(Node::_22),
+            "23" => Ok(Node::_23),
+            "24" => Ok(Node::_24),
+            "25" => Ok(Node::_25),
+            "26" => Ok(Node::_26),
+            "27" => Ok(Node::_27),
+            "28" => Ok(Node::_28),
+            "29" => Ok(Node::_29),
+            "30" => Ok(Node::_30),
+            "31" => Ok(Node::_31),
+            "32" => Ok(Node::_32),
+            "33" => Ok(Node::_33),
+            "34" => Ok(Node::_34),
+            "35" => Ok(Node::_35),
+            "36" => Ok(Node::_36),
+            "37" => Ok(Node::_37),
+            "38" => Ok(Node::_38),
+            "39" => Ok(Node::_39),
+            "40" => Ok(Node::_40),
+            "41" => Ok(Node::_41),
+            "42" => Ok(Node::_42),
+            "43" => Ok(Node::_43),
+            "44" => Ok(Node::_44),
+            "45" => Ok(Node::_45),
+            "46" => Ok(Node::_46),
+            "47" => Ok(Node::_47),
+            "48" => Ok(Node::_48),
+            "49" => Ok(Node::_49),
+            "50" => Ok(Node::_50),
+            "51" => Ok(Node::_51),
+            "52" => Ok(Node::_52),
+            "53" => Ok(Node::_53),
+            "54" => Ok(Node::_54),
+            "55" => Ok(Node::_55),
+            "56" => Ok(Node::_56),
+            "57" => Ok(Node::_57),
+            "58" => Ok(Node::_58),
+            "59" => Ok(Node::_59),
+            "60" => Ok(Node::_60),
+            "NANO_D0" => Ok(Node::NANO_D0),
+            "NANO_D1" => Ok(Node::NANO_D1),
+            "NANO_D2" => Ok(Node::NANO_D2),
+            "NANO_D3" => Ok(Node::NANO_D3),
+            "NANO_D4" => Ok(Node::NANO_D4),
+            "NANO_D5" => Ok(Node::NANO_D5),
+            "NANO_D6" => Ok(Node::NANO_D6),
+            "NANO_D7" => Ok(Node::NANO_D7),
+            "NANO_D8" => Ok(Node::NANO_D8),
+            "NANO_D9" => Ok(Node::NANO_D9),
+            "NANO_D10" => Ok(Node::NANO_D10),
+            "NANO_D11" => Ok(Node::NANO_D11),
+            "NANO_D12" => Ok(Node::NANO_D12),
+            "NANO_D13" => Ok(Node::NANO_D13),
+            "NANO_A0" => Ok(Node::NANO_A0),
+            "NANO_A1" => Ok(Node::NANO_A1),
+            "NANO_A2" => Ok(Node::NANO_A2),
+            "NANO_A3" => Ok(Node::NANO_A3),
+            "NANO_A4" => Ok(Node::NANO_A4),
+            "NANO_A5" => Ok(Node::NANO_A5),
+            "NANO_A6" => Ok(Node::NANO_A6),
+            "NANO_A7" => Ok(Node::NANO_A7),
+            "RP_UART_RX" => Ok(Node::RP_UART_RX),
+            "RP_UART_TX" => Ok(Node::RP_UART_TX),
+            "ISENSE_PLUS" => Ok(Node::ISENSE_PLUS),
+            "ISENSE_MINUS" => Ok(Node::ISENSE_MINUS),
+            "TOP_RAIL" => Ok(Node::TOP_RAIL),
+            "BOTTOM_RAIL" => Ok(Node::BOTTOM_RAIL),
+            "DAC1" => Ok(Node::DAC1),
+            "DAC0" => Ok(Node::DAC0),
+            "ADC0" => Ok(Node::ADC0),
+            "ADC1" => Ok(Node::ADC1),
+            "ADC2" => Ok(Node::ADC2),
+            "ADC3" => Ok(Node::ADC3),
+            "NANO_RESET_J0" => Ok(Node::NANO_RESET_J0),
+            "NANO_RESET_J1" => Ok(Node::NANO_RESET_J1),
+            "NANO_AREF" => Ok(Node::NANO_AREF),
+            "GPIO_20" => Ok(Node::GPIO_20),
+            "GPIO_21" => Ok(Node::GPIO_21),
+            "GPIO_22" => Ok(Node::GPIO_22),
+            "GPIO_23" => Ok(Node::GPIO_23),
+            "GPIO_MCP_0" => Ok(Node::GPIO_MCP_0),
+            "GPIO_MCP_1" => Ok(Node::GPIO_MCP_1),
+            "GPIO_MCP_2" => Ok(Node::GPIO_MCP_2),
+            "GPIO_MCP_3" => Ok(Node::GPIO_MCP_3),
+            _ => Err(InvalidNode),
+        }
+    }
+}
 pub type BoardSpec = jumperless_types::board_spec::BoardSpec<Node, 108usize, 86usize, 8usize>;
 pub type Board = jumperless_types::board::Board<Node, 108usize, 86usize, 8usize>;
 pub fn board_spec() -> BoardSpec {
@@ -264,7 +381,7 @@ pub fn board_spec() -> BoardSpec {
                 Port::new(ChipId::from_ascii(75u8), Dimension::X, 15u8),
             ),
             NodePort(
-                Node::SUPPLY_5v,
+                Node::SUPPLY_5V,
                 Port::new(ChipId::from_ascii(76u8), Dimension::X, 0u8),
             ),
             NodePort(

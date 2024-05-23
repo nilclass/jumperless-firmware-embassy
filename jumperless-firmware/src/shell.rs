@@ -1,9 +1,8 @@
 use embassy_rp::{peripherals::USB, usb::Driver};
-use embassy_time::Duration;
 // use heapless::Vec;
 use embassy_usb::{class::cdc_acm::CdcAcmClass, driver::EndpointError};
 use line_buffer::LineBuffer;
-use jumperless_common::layout::Node;
+use jumperless_common::board::Node;
 
 use crate::nets::SupplySwitchPos;
 use crate::task::{net_manager, leds};
@@ -220,7 +219,7 @@ impl<'a, 'b, const BUF_SIZE: usize> Shell<'a, 'b, BUF_SIZE> {
         // move cursor to correct position
         let cursor = self.buffer.cursor() + 2;
         self.class.write_packet(&[b'\r']).await?;
-        for i in 0..cursor {
+        for _ in 0..cursor {
             self.class.write_packet(&[27, b'[', b'C']).await?;
         }
         Ok(())
